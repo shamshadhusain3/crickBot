@@ -25,7 +25,7 @@ fastify.register(socketioServer, {
 async function calculatePlayerStats(inningId: string, strikerId: string | null, nonStrikerId: string | null, activeBowlerId: string | null) {
     const deliveries = await prisma.delivery.findMany({ where: { inningId } });
     
-    // Fetch all players involved in the inning to get names
+    // Fetch all players associated with this match/innings to get names
     const involvedPlayerIds = Array.from(new Set([
         ...deliveries.map(d => d.batterId),
         ...deliveries.map(d => d.bowlerId),
@@ -41,17 +41,13 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
         const runs = balls.reduce((acc, d) => acc + d.runs, 0);
         const fours = balls.filter(d => d.runs === 4).length;
         const sixes = balls.filter(d => d.runs === 6).length;
-        
-        // Find who bowled them
         const wicketBall = balls.find(d => d.wicketType !== 'none');
         const bowledBy = wicketBall ? (playersMap[wicketBall.bowlerId!] || 'Unknown') : null;
 
         return { 
             id: pid, 
             name: playersMap[pid] || 'Unknown',
-            runs, 
-            balls: balls.length, 
-            fours, sixes, 
+            runs, balls: balls.length, fours, sixes, 
             sr: balls.length ? ((runs / balls.length) * 100).toFixed(1) : "0.0",
             bowledBy 
         };
@@ -68,7 +64,6 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
             const overs = Math.floor(legalBalls.length / 6);
             const remBalls = legalBalls.length % 6;
 
-            // Over-by-Over Breakdown
             const overNumbers = Array.from(new Set(balls.map(d => d.overNumber))).sort((a,b) => a-b);
             const overHistory = overNumbers.map(oNum => {
                 const overDeliveries = balls.filter(d => d.overNumber === oNum);
@@ -85,6 +80,7 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
                 id: pid,
                 name: playersMap[pid] || 'Unknown',
                 overs: `${overs}.${remBalls}`,
+                overCount: overs + (remBalls > 0 ? 1 : 0),
                 runs: runsConceded,
                 wickets,
                 econ: legalBalls.length ? ((runsConceded / (legalBalls.length / 6))).toFixed(2) : "0.00",
@@ -96,12 +92,18 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
     const outPlayerIds = Array.from(new Set(deliveries.filter(d => d.wicketType !== 'none').map(d => d.batterId).filter(id => id !== null) as string[]));
     const outBatters = outPlayerIds.map(pid => getBatterStats(pid));
 
+    const lastDelivery = await prisma.delivery.findFirst({
+        where: { inningId },
+        orderBy: { createdAt: 'desc' }
+    });
+
     return {
         striker: strikerId ? getBatterStats(strikerId) : null,
         nonStriker: nonStrikerId ? getBatterStats(nonStrikerId) : null,
         bowler: activeBowlerId ? getAllBowlersStats().find(b => b.id === activeBowlerId) : null,
         outBatters,
-        allBowlers: getAllBowlersStats()
+        allBowlers: getAllBowlersStats(),
+        lastBowlerId: lastDelivery?.bowlerId || null
     };
 }
 
@@ -109,9 +111,18 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
 
 fastify.get('/ping', async () => ({ status: 'ok', brand: 'CrickBot Pro Engine' }))
 
+// List Live Matches (Lobby)
+fastify.get('/api/matches', async () => {
+    return prisma.match.findMany({
+        where: { status: 'live' },
+        include: { innings: true },
+        orderBy: { id: 'desc' }
+    });
+})
+
 // Create Match
 fastify.post('/api/matches', async (request) => {
-  const { teamA, teamB, overs, includeExtras, battingTeam, mode, rosterA, rosterB } = request.body as any
+  const { teamA, teamB, overs, includeExtras, battingTeam, mode, rosterA, rosterB, umpirePin, bowlerOverLimit } = request.body as any
   
   const match = await prisma.match.create({
     data: {
@@ -120,6 +131,8 @@ fastify.post('/api/matches', async (request) => {
       includeExtras,
       mode: mode || 'quick',
       status: 'live',
+      umpirePin: umpirePin?.toString() || null,
+      bowlerOverLimit: parseInt(bowlerOverLimit || 0),
       innings: { create: [{ battingTeam }] }
     },
     include: { innings: true }
@@ -128,6 +141,13 @@ fastify.post('/api/matches', async (request) => {
   if (mode === 'pro' && rosterA && rosterB) {
      const dbRosterA = await Promise.all(rosterA.map((p: any) => prisma.player.create({ data: { name: p.isCaptain ? `${p.name} (C)` : p.name } })))
      const dbRosterB = await Promise.all(rosterB.map((p: any) => prisma.player.create({ data: { name: p.isCaptain ? `${p.name} (C)` : p.name } })))
+     
+     // LINK ROSTERS
+     await Promise.all([
+         ...dbRosterA.map(p => prisma.matchPlayer.create({ data: { matchId: match.id, playerId: p.id, team: 'A' } })),
+         ...dbRosterB.map(p => prisma.matchPlayer.create({ data: { matchId: match.id, playerId: p.id, team: 'B' } }))
+     ])
+
      return { ...match, rosterA: dbRosterA, rosterB: dbRosterB }
   }
   return match
@@ -136,10 +156,15 @@ fastify.post('/api/matches', async (request) => {
 // Update Active Players
 fastify.post('/api/matches/:id/innings/players', async (request, reply) => {
     const { id } = request.params as any
-    const { strikerId, nonStrikerId, currentBowlerId } = request.body as any
+    const { strikerId, nonStrikerId, currentBowlerId, pin } = request.body as any
     
     const match = await prisma.match.findUnique({ where: { id }, include: { innings: true }})
     if (!match) return reply.status(404).send({ error: "Match not found" })
+    
+    if (match.umpirePin && match.umpirePin !== pin?.toString()) {
+        return reply.status(403).send({ error: "Invalid Umpire PIN" })
+    }
+
     const currentInning = match.innings[match.innings.length - 1]
 
     const updated = await prisma.inning.update({
@@ -151,8 +176,20 @@ fastify.post('/api/matches/:id/innings/players', async (request, reply) => {
         }
     })
 
+    const updatedMatch = await prisma.match.findUnique({
+        where: { id },
+        include: { innings: true }
+    })
+
+    const inningsWithStats = await Promise.all(updatedMatch!.innings.map(async (inn) => {
+        return {
+            ...inn,
+            stats: await calculatePlayerStats(inn.id, inn.strikerId, inn.nonStrikerId, inn.currentBowlerId)
+        }
+    }))
+
     const stats = await calculatePlayerStats(updated.id, updated.strikerId, updated.nonStrikerId, updated.currentBowlerId)
-    const payload = { event: 'player-update', strikerId: updated.strikerId, nonStrikerId: updated.nonStrikerId, currentBowlerId: updated.currentBowlerId, stats }
+    const payload = { event: 'player-update', strikerId: updated.strikerId, nonStrikerId: updated.nonStrikerId, currentBowlerId: updated.currentBowlerId, stats, innings: inningsWithStats }
     fastify.io.to(id).emit('match-update', payload)
     return payload
 })
@@ -160,12 +197,16 @@ fastify.post('/api/matches/:id/innings/players', async (request, reply) => {
 // Record Delivery
 fastify.post('/api/matches/:id/deliveries', async (request, reply) => {
   const { id } = request.params as any
-  const { run, isExtra, extraType, isWicket } = request.body as any
+  const { run, isExtra, extraType, isWicket, pin } = request.body as any
 
   const match = await prisma.match.findUnique({ where: { id }, include: { innings: true }})
   if (!match) return reply.status(404).send({ error: "Match not found" })
-  const currentInning = match.innings[match.innings.length - 1]
 
+  if (match.umpirePin && match.umpirePin !== pin?.toString()) {
+    return reply.status(403).send({ error: "Invalid Umpire PIN" })
+  }
+
+  const currentInning = match.innings[match.innings.length - 1]
   const { strikerId, nonStrikerId, currentBowlerId } = currentInning
 
   if (match.mode === 'pro' && (!strikerId || !nonStrikerId || !currentBowlerId)) {
@@ -192,7 +233,7 @@ fastify.post('/api/matches/:id/deliveries', async (request, reply) => {
     }
   })
 
-  // Strike Rotation
+  // Strike Rotation Logic
   let nextStrikerId = strikerId
   let nextNonStrikerId = nonStrikerId
   let nextBowlerId = currentBowlerId
@@ -224,6 +265,18 @@ fastify.post('/api/matches/:id/deliveries', async (request, reply) => {
 
   const stats = await calculatePlayerStats(updatedInning.id, nextStrikerId, nextNonStrikerId, nextBowlerId)
   
+  const updatedMatch = await prisma.match.findUnique({
+    where: { id },
+    include: { innings: true }
+  })
+
+  const inningsWithStats = await Promise.all(updatedMatch!.innings.map(async (inn) => {
+      return {
+          ...inn,
+          stats: await calculatePlayerStats(inn.id, inn.strikerId, inn.nonStrikerId, inn.currentBowlerId)
+      }
+  }))
+
   let responseData: any = { 
      matchId: id, 
      delivery: { ...delivery, overNumber, ballNumber }, 
@@ -237,6 +290,7 @@ fastify.post('/api/matches/:id/deliveries', async (request, reply) => {
      nonStrikerId: nextNonStrikerId,
      currentBowlerId: nextBowlerId,
      stats,
+     innings: inningsWithStats, // ADDED for scorecard sync
      event: 'live' 
   };
 
@@ -276,12 +330,29 @@ fastify.get('/api/matches/:id', async (request) => {
   const { id } = request.params as any
   const match = await prisma.match.findUnique({
     where: { id },
-    include: { innings: { include: { deliveries: true } } }
+    include: { 
+        innings: { include: { deliveries: true } },
+        players: { include: { player: true } }
+    }
   })
   if (!match) return { error: "Not found" }
+  
+  // Transform Roster
+  const rosterA = match.players.filter(p => p.team === 'A').map(p => p.player)
+  const rosterB = match.players.filter(p => p.team === 'B').map(p => p.player)
+
+  // Calculate stats for ALL innings
+  const inningsWithStats = await Promise.all(match.innings.map(async (inn) => {
+      return {
+          ...inn,
+          stats: await calculatePlayerStats(inn.id, inn.strikerId, inn.nonStrikerId, inn.currentBowlerId)
+      }
+  }))
+
   const currentInning = match.innings[match.innings.length - 1]
-  const stats = await calculatePlayerStats(currentInning.id, currentInning.strikerId, currentInning.nonStrikerId, currentInning.currentBowlerId)
-  return { ...match, stats }
+  const currentStats = await calculatePlayerStats(currentInning.id, currentInning.strikerId, currentInning.nonStrikerId, currentInning.currentBowlerId)
+  
+  return { ...match, rosterA, rosterB, innings: inningsWithStats, stats: currentStats }
 })
 
 fastify.ready(err => {

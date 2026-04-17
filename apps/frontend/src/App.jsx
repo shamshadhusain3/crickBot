@@ -17,6 +17,7 @@ function App() {
             <Route path="/setup" element={<MatchSetup />} />
             <Route path="/toss" element={<Toss />} />
             <Route path="/live" element={<LiveMatch />} />
+            <Route path="/match/:matchId" element={<LiveMatch />} />
           </Routes>
         </div>
       </Router>

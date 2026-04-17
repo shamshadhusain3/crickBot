@@ -25,6 +25,7 @@ model Player {
   // Relations for tracking stats
   ballsFaced Delivery[] @relation("Batter")
   ballsBowled Delivery[] @relation("Bowler")
+  matches     MatchPlayer[]
 }
 
 model Match {
@@ -36,7 +37,19 @@ model Match {
   includeExtras Boolean  @default(true)
   status        String   @default("live") // live, completed
   target        Int?
+  umpirePin     String?
+  bowlerOverLimit Int    @default(0) // 0 means no limit
   innings       Inning[]
+  players       MatchPlayer[]
+}
+
+model MatchPlayer {
+  id        String   @id @default(uuid())
+  matchId   String
+  match     Match    @relation(fields: [matchId], references: [id])
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id])
+  team      String   // A or B
 }
 
 model Inning {

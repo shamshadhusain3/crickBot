@@ -18,8 +18,14 @@ export const useMatchStore = create(
       battingTeam: '',
       winner: '', // Toss winner
       decision: '', // bat or bowl
+      umpirePin: '', // 4-digit PIN
+      myMatches: [], // { id, pin } Array of matches managed by this user
       
       // Actions
+      addMatchToCollection: (id, pin) => set((state) => ({ 
+          myMatches: [...state.myMatches.filter(m => m.id !== id), { id, pin }] 
+      })),
+
       setSetupData: (data) => set({ ...data }),
       
       setTossResult: (winner, decision, battingTeam) => set({ 
@@ -39,7 +45,8 @@ export const useMatchStore = create(
          teamB: '', 
          battingTeam: '', 
          winner: '', 
-         decision: '' 
+         decision: '',
+         umpirePin: ''
       }),
     }),
     {

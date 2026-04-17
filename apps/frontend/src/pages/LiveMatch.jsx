@@ -1,410 +1,512 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Camera, Settings, Circle, Wifi, WifiOff, UserPlus, Repeat, UserCheck, ShieldAlert, ChevronDown, ChevronUp, Eye, EyeOff, BarChart3, History } from 'lucide-react'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { Camera, Settings, Circle, Wifi, WifiOff, UserPlus, Repeat, UserCheck, ShieldAlert, ChevronDown, ChevronUp, Eye, EyeOff, BarChart3, History, PlayCircle, LogOut, XCircle, CheckCircle2, Share2, Lock, Unlock, Clipboard, ArrowLeftRight, Trophy, ChevronLeft } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 import { useMatchStore } from '../store/useMatchStore'
 import { matchService } from '../services/matchService'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 export default function LiveMatch() {
-  const navigate = useNavigate()
-  const { activeMatchId, mode, rosterA, rosterB, includeExtras, battingTeam, teamA, teamB, overs } = useMatchStore()
-  
-  if (!activeMatchId && !teamA) {
-     return <div className="p-6 text-center text-white min-h-screen pt-20">Match corrupted.<br/><button onClick={() => navigate('/setup')} className="mt-4 px-4 py-2 bg-brand-500 rounded-full font-bold">Go Back</button></div>
-  }
-  
-  const bowlingTeam = battingTeam === teamA ? teamB : teamA
-  const battingRoster = useMemo(() => (battingTeam === teamA ? rosterA : rosterB), [battingTeam, rosterA, rosterB])
-  const bowlingRoster = useMemo(() => (bowlingTeam === teamA ? rosterA : rosterB), [bowlingTeam, rosterA, rosterB])
+    const { matchId: matchIdFromParams } = useParams()
+    const navigate = useNavigate()
+    const location = useLocation()
+    const { search, state } = location
+    const queryParams = new URLSearchParams(search)
+    const queryClient = useQueryClient()
 
-  // --- STATE ---
-  const [runs, setRuns] = useState(0)
-  const [wickets, setWickets] = useState(0)
-  const [oversCount, setOversCount] = useState(0)
-  const [ballsThisOver, setBallsThisOver] = useState(0)
-  const [currentOverHistory, setCurrentOverHistory] = useState([])
-  
-  const [strikerId, setStrikerId] = useState(null)
-  const [nonStrikerId, setNonStrikerId] = useState(null)
-  const [currentBowlerId, setCurrentBowlerId] = useState(null)
-  const [stats, setStats] = useState(null)
-  
-  const [overlayMessage, setOverlayMessage] = useState(null)
-  const [target, setTarget] = useState(null)
-  const [showOutList, setShowOutList] = useState(false)
-  const [showBowlerStats, setShowBowlerStats] = useState(false)
-  const [expandedBowlerId, setExpandedBowlerId] = useState(null)
-  const [useAiCamera, setUseAiCamera] = useState(false)
+    const role = queryParams.get('role') || 'viewer' // Default to viewer for safety
+    const { activeMatchId, mode, rosterA: storeRosterA, rosterB: storeRosterB, teamA, teamB, overs } = useMatchStore()
 
-  // --- API HYDRATION ---
-  const { data: initialData, isLoading } = useQuery({
-      queryKey: ['match', activeMatchId],
-      queryFn: () => matchService.getMatch(activeMatchId),
-      enabled: !!activeMatchId
-  })
+    const matchId = activeMatchId || matchIdFromParams
 
-  useEffect(() => {
-    if (initialData && !initialData.error) {
-        const lastInning = initialData.innings[initialData.innings.length - 1]
-        setRuns(lastInning.totalRuns)
-        setWickets(lastInning.totalWickets)
-        setStrikerId(lastInning.strikerId || null)
-        setNonStrikerId(lastInning.nonStrikerId || null)
-        setCurrentBowlerId(lastInning.currentBowlerId || null)
-        setTarget(initialData.target)
-        setStats(initialData.stats)
-        
-        const legalBalls = lastInning.deliveries.filter(d => d.extras === 0).length
-        setOversCount(Math.floor(legalBalls / 6))
-        setBallsThisOver(legalBalls % 6)
-        
-        if (initialData.status === 'completed') {
-            setOverlayMessage({ title: "Match Over", subtitle: "This match has already finished." })
+    // --- STATE ---
+    const [runs, setRuns] = useState(0)
+    const [wickets, setWickets] = useState(0)
+    const [oversCount, setOversCount] = useState(0)
+    const [ballsThisOver, setBallsThisOver] = useState(0)
+    const [currentOverHistory, setCurrentOverHistory] = useState([])
+
+    const [strikerId, setStrikerId] = useState(null)
+    const [nonStrikerId, setNonStrikerId] = useState(null)
+    const [currentBowlerId, setCurrentBowlerId] = useState(null)
+    const [stats, setStats] = useState(null)
+    const [matchDataFull, setMatchDataFull] = useState(null)
+
+    const [overlayMessage, setOverlayMessage] = useState(null)
+    const [target, setTarget] = useState(null)
+    const [showOutList, setShowOutList] = useState(false)
+    const [showBowlerStats, setShowBowlerStats] = useState(false)
+    const [expandedBowlerId, setExpandedBowlerId] = useState(null)
+    const [useAiCamera, setUseAiCamera] = useState(false)
+    const [showExitConfirm, setShowExitConfirm] = useState(false)
+    const [activeTab, setActiveTab] = useState('live') // 'live', 'scorecard'
+
+    // Security
+    const [umpirePin, setUmpirePin] = useState(state?.autoVerifyPin || '')
+    const [isPinVerified, setIsPinVerified] = useState(!!state?.autoVerifyPin)
+    const [showPinPrompt, setShowPinPrompt] = useState(role === 'umpire' && !state?.autoVerifyPin)
+
+    // --- API HYDRATION ---
+    const { data: initialData, isLoading, refetch } = useQuery({
+        queryKey: ['match', matchId],
+        queryFn: () => matchService.getMatch(matchId),
+        enabled: !!matchId
+    })
+
+    useEffect(() => {
+        if (initialData && !initialData.error) {
+            setMatchDataFull(initialData)
+            const lastInning = initialData.innings[initialData.innings.length - 1]
+            setRuns(lastInning.totalRuns)
+            setWickets(lastInning.totalWickets)
+            setStrikerId(lastInning.strikerId || null)
+            setNonStrikerId(lastInning.nonStrikerId || null)
+            setCurrentBowlerId(lastInning.currentBowlerId || null)
+            setTarget(initialData.target)
+            setStats(initialData.stats)
+
+            const legalBalls = lastInning.deliveries.filter(d => d.extras === 0).length
+            setOversCount(Math.floor(legalBalls / 6))
+            setBallsThisOver(legalBalls % 6)
+
+            if (initialData.status === 'completed') {
+                setOverlayMessage({ title: "Match Over!", subtitle: `Final Result: ${initialData.winningTeam} won.`, type: 'final' })
+            } else if (lastInning.status === 'completed' && initialData.innings.length === 1) {
+                setOverlayMessage({ title: "Inning Break", subtitle: `First inning over. Target for ${initialData.innings[0].battingTeam === (initialData.teamA) ? initialData.teamB : initialData.teamA} is ${initialData.target} runs.`, type: 'break' })
+            }
+        }
+    }, [initialData])
+
+    // --- SOCKET SYNC ---
+    const { isConnected, matchData } = useSocket(matchId);
+
+    useEffect(() => {
+        if (matchData) {
+            if (matchData.score) {
+                setRuns(matchData.score.runs)
+                setWickets(matchData.score.wickets)
+                setOversCount(matchData.score.overs)
+                setBallsThisOver(matchData.score.balls)
+            }
+
+            if (matchData.delivery) {
+                let label = matchData.delivery.wicketType !== 'none' ? 'W' : (matchData.delivery.extras > 0 ? `${matchData.delivery.extraType.charAt(0).toUpperCase()}` : matchData.delivery.runs.toString())
+                setCurrentOverHistory(prev => {
+                    const updated = [...prev, { label, ...matchData.delivery }]
+                    return updated.length > 8 ? updated.slice(1) : updated
+                })
+                if (matchData.score.balls === 0 && matchData.delivery.extras === 0) setCurrentOverHistory([])
+            }
+
+            setStrikerId(matchData.strikerId || null)
+            setNonStrikerId(matchData.nonStrikerId || null)
+            setCurrentBowlerId(matchData.currentBowlerId || null)
+            setStats(matchData.stats)
+            
+            if (matchData.innings) {
+                setMatchDataFull(prev => ({ ...prev, innings: matchData.innings }))
+            }
+
+            if (matchData.event === 'inning-break') {
+                setTarget(matchData.target);
+                setOverlayMessage({ title: "Inning Break", subtitle: `Target for ${matchData.newBattingTeam} is ${matchData.target} runs.`, type: 'break' })
+                refetch() 
+            } else if (matchData.event === 'match-completed') {
+                setOverlayMessage({ title: "Match Over!", subtitle: `${matchData.winningTeam} won. ${matchData.reason}`, type: 'final' })
+            }
+        }
+    }, [matchData])
+
+    // --- ACTIONS ---
+    const { mutateAsync: postDelivery, isPending } = useMutation({
+        mutationFn: (payload) => matchService.recordDelivery(matchId, { ...payload, pin: umpirePin }),
+        onError: (err) => alert(err.response?.data?.error || "Failed to record ball")
+    })
+
+    const { mutate: updatePlayers } = useMutation({
+        mutationFn: (ids) => matchService.updateActivePlayers(matchId, { ...ids, pin: umpirePin }),
+        onError: (err) => alert(err.response?.data?.error || "Failed to update players")
+    })
+
+    const handlePinSubmit = () => {
+        setIsPinVerified(true)
+        setShowPinPrompt(false)
+    }
+
+    const handleSelection = (type, playerId) => {
+        const payload = {}
+        if (type === 'striker') payload.strikerId = playerId
+        if (type === 'nonStriker') payload.nonStrikerId = playerId
+        if (type === 'bowler') payload.currentBowlerId = playerId
+        updatePlayers(payload)
+    }
+
+    const shareMatch = () => {
+        const shareUrl = `${window.location.origin}/match/${matchId}?role=viewer`
+        const text = `\u{1F3CF} Watch ${initialData?.teamA} vs ${initialData?.teamB} Live on CrickBot!`
+        if (navigator.share) {
+            navigator.share({ title: 'Live Match', text, url: shareUrl })
+        } else {
+            window.open(`https://wa.me/?text=${encodeURIComponent(text + " " + shareUrl)}`)
         }
     }
-  }, [initialData])
 
-  // --- SOCKET SYNC ---
-  const { isConnected, matchData } = useSocket(activeMatchId);
+    const resumeNextInning = async () => {
+        setOverlayMessage(null)
+        setCurrentOverHistory([])
+        await refetch()
+    }
 
-  useEffect(() => {
-     if (matchData) {
-         if (matchData.score) {
-            setRuns(matchData.score.runs)
-            setWickets(matchData.score.wickets)
-            setOversCount(matchData.score.overs)
-            setBallsThisOver(matchData.score.balls)
-         }
-         
-         if (matchData.delivery) {
-             let label = matchData.delivery.wicketType !== 'none' ? 'W' : (matchData.delivery.extras > 0 ? `${matchData.delivery.extraType.charAt(0).toUpperCase()}` : matchData.delivery.runs.toString())
-             setCurrentOverHistory(prev => {
-                const updated = [...prev, { label, ...matchData.delivery }]
-                return updated.length > 8 ? updated.slice(1) : updated
-             })
-             if (matchData.score.balls === 0 && matchData.delivery.extras === 0) setCurrentOverHistory([])
-         }
+    const sendDelivery = async (run, isExtra = false, extraType = '', isWicket = false) => {
+        if (overlayMessage || isPending) return;
+        await postDelivery({ run, isExtra, extraType, isWicket })
+    }
 
-         setStrikerId(matchData.strikerId || null)
-         setNonStrikerId(matchData.nonStrikerId || null)
-         setCurrentBowlerId(matchData.currentBowlerId || null)
-         setStats(matchData.stats)
+    const swapStrikeManual = () => {
+        updatePlayers({ strikerId: nonStrikerId, nonStrikerId: strikerId })
+    }
 
-         if (matchData.event === 'inning-break') {
-            setTarget(matchData.target);
-            setOverlayMessage({ title: "Inning Break", subtitle: `Target for ${matchData.newBattingTeam} is ${matchData.target} runs.` })
-         } else if (matchData.event === 'match-completed') {
-            setOverlayMessage({ title: "Match Over!", subtitle: `${matchData.winningTeam} won. ${matchData.reason}` })
-         }
-     }
-  }, [matchData])
+    const isUmpire = role === 'umpire' && isPinVerified
+    const needsBatters = initialData?.mode === 'pro' && (!strikerId || !nonStrikerId)
+    const needsBowler = initialData?.mode === 'pro' && strikerId && nonStrikerId && !currentBowlerId
+    const isSelectionRequired = isUmpire && (needsBatters || needsBowler)
 
-  // --- MUTATIONS ---
-  const { mutateAsync: postDelivery, isPending } = useMutation({
-      mutationFn: (payload) => matchService.recordDelivery(activeMatchId, payload),
-      onError: (err) => alert(err.response?.data?.error || "Failed to record ball")
-  })
+    const currentRosterA = initialData?.rosterA || storeRosterA || []
+    const currentRosterB = initialData?.rosterB || storeRosterB || []
 
-  const { mutate: updatePlayers } = useMutation({
-      mutationFn: (ids) => matchService.updateActivePlayers(activeMatchId, ids)
-  })
-
-  const handleSelection = (type, playerId) => {
-      const payload = {}
-      if (type === 'striker') payload.strikerId = playerId
-      if (type === 'nonStriker') payload.nonStrikerId = playerId
-      if (type === 'bowler') payload.currentBowlerId = playerId
-      updatePlayers(payload)
-  }
-
-  const sendDelivery = async (run, isExtra = false, extraType = '', isWicket = false) => {
-    if (overlayMessage || isPending) return;
-    await postDelivery({ run, isExtra, extraType, isWicket })
-  }
-
-  const swapStrikeManual = () => {
-      updatePlayers({ strikerId: nonStrikerId, nonStrikerId: strikerId })
-  }
-
-  // --- RENDER HELPERS ---
-  const needsBatters = mode === 'pro' && (!strikerId || !nonStrikerId)
-  const needsBowler = mode === 'pro' && strikerId && nonStrikerId && !currentBowlerId
-  const isSelectionRequired = needsBatters || needsBowler
-
-  const SelectionOverlay = () => {
-    if (!isSelectionRequired) return null
-
-    return (
-        <div className="absolute inset-x-0 bottom-0 z-50 bg-slate-900 border-t border-white/10 rounded-t-[2.5rem] p-6 animate-slide-up shadow-[0_-20px_50px_rgba(0,0,0,0.8)] pb-12">
-            <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mb-6" />
-            
-            <div className="flex flex-col items-center mb-6">
-                <div className={`p-3 rounded-full mb-3 ${needsBatters ? 'bg-brand-500/20 text-brand-500' : 'bg-indigo-500/20 text-indigo-400'}`}>
-                    {needsBatters ? <UserPlus className="w-6 h-6" /> : <ShieldAlert className="w-6 h-6" />}
-                </div>
-                <h3 className="text-2xl font-black text-white tracking-tighter">
-                    {needsBatters ? "Select Batters" : "Select Bowler"}
-                </h3>
-                <p className="text-slate-500 text-xs mt-1 text-center font-bold">
-                    {needsBatters ? "Choose active striker & non-striker" : `Select bowler for ${bowlingTeam}`}
-                </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 max-h-[35vh] overflow-y-auto pb-6 scrollbar-none">
-                {(needsBowler ? bowlingRoster : battingRoster).map(p => {
-                    const isActive = (p.id === strikerId || p.id === nonStrikerId || p.id === currentBowlerId)
-                    const isOut = stats?.outBatters?.some(out => out.id === p.id)
-                    
-                    return (
-                      <button 
-                          key={p.id}
-                          disabled={isActive || isOut}
-                          onClick={() => handleSelection(needsBatters ? (!strikerId ? 'striker' : 'nonStriker') : 'bowler', p.id)}
-                          className={`p-3 rounded-xl font-black flex flex-col items-center gap-0.5 transition-all text-sm
-                            ${(isActive || isOut) ? 'opacity-20 bg-slate-800' : 'bg-slate-800 border border-slate-700 active:bg-brand-500 active:scale-95'}`}
-                      >
-                          <span className="text-white line-clamp-1 truncate">{p.name}</span>
-                          <span className="text-[8px] text-slate-500 uppercase tracking-widest">{isOut ? 'OUT' : (isActive ? 'ON FIELD' : 'SELECT')}</span>
-                      </button>
-                    )
-                })}
-            </div>
-        </div>
-    )
-  }
-
-  const PlayerStatCard = ({ player, isStriker, label }) => {
-      const pStats = stats?.[label === 'Striker' ? 'striker' : 'nonStriker']
-      const isEmpty = !player
-
-      return (
-          <div className={`p-3 rounded-xl border transition-all duration-300 flex-1 relative
-            ${isStriker ? 'bg-brand-500/10 border-brand-500 shadow-lg' : 'bg-white/5 border-white/5 opacity-70'}`}>
-              
-              <div className="flex justify-between items-center mb-1">
-                  <span className={`text-[8px] font-black uppercase tracking-widest flex items-center gap-1 ${isStriker ? 'text-brand-400' : 'text-slate-500'}`}>
-                      {label} {isStriker && <Circle className="w-1.5 h-1.5 fill-brand-500 text-brand-500 animate-pulse" />}
-                  </span>
-                  {isStriker && <button onClick={swapStrikeManual} className="p-1 hover:bg-white/10 rounded-md"><Repeat className="w-2.5 h-2.5 text-slate-500"/></button>}
-              </div>
-
-              {isEmpty ? (
-                  <div className="text-[10px] font-black text-slate-700 italic uppercase py-1">Waiting...</div>
-              ) : (
-                  <>
-                    <div className="text-sm font-black truncate text-white uppercase tracking-tighter">{player.name}</div>
-                    <div className="flex justify-between items-end mt-1">
-                        <div className="flex gap-2">
-                             <span className="text-xs font-black text-white">{pStats?.runs || 0}<span className="text-[9px] text-slate-500 ml-0.5">({pStats?.balls || 0})</span></span>
-                        </div>
-                        <span className="text-[9px] font-black text-brand-400">SR {pStats?.sr || "0.0"}</span>
-                    </div>
-                  </>
-              )}
-          </div>
-      )
-  }
-
-  const BowlerHUD = () => {
-      const b = stats?.bowler
-      return (
-          <div className="bg-slate-900 border border-white/10 rounded-2xl p-3 flex items-center gap-3 shadow-xl">
-              <div className={`w-10  h-10 rounded-xl flex items-center justify-center ${currentBowlerId ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-600'}`}>
-                  <UserCheck className="w-6 h-6" />
-              </div>
-              <div className="flex-1 min-w-0">
-                  <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">BOWLER</div>
-                  <div className="text-xs font-black text-white truncate uppercase">{currentBowlerId ? (bowlingRoster.find(r => r.id === currentBowlerId)?.name) : "AWAITING"}</div>
-              </div>
-              <div className="flex gap-3 items-center text-xs">
-                  <div className="text-center"><div className="text-[8px] font-black text-slate-600">O</div><div className="font-black text-indigo-400 tabular-nums">{b?.overs || "0.0"}</div></div>
-                  <div className="text-center"><div className="text-[8px] font-black text-slate-600">W-R</div><div className="font-black text-white tabular-nums">{b?.wickets || 0}-{b?.runs || 0}</div></div>
-                  <div className="text-center"><div className="text-[8px] font-black text-slate-600">E</div><div className="font-black text-slate-500 tabular-nums">{b?.econ || "0.0"}</div></div>
-              </div>
-          </div>
-      )
-  }
-
-  if (isLoading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center font-black text-brand-500 animate-pulse uppercase tracking-widest">Hydrating Match...</div>
-
-  return (
-    <div className="flex flex-col h-screen max-h-screen bg-slate-950 text-white overflow-hidden relative z-10 w-full font-sans pb-safe">
-      
-      {overlayMessage && (
-          <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center p-8 text-center">
-             <h2 className="text-5xl font-black text-white tracking-widest mb-4 uppercase">{overlayMessage.title}</h2>
-             <p className="text-xl text-brand-400 font-bold mb-12 uppercase">{overlayMessage.subtitle}</p>
-             <button onClick={() => navigate('/')} className="bg-slate-800 text-white px-10 py-5 rounded-2xl font-black text-lg w-full active:scale-95 transition-all shadow-2xl border border-slate-700">Exit Match</button>
-          </div>
-      )}
-
-      <SelectionOverlay />
-
-      {/* Header */}
-      <div className="px-5 py-3 bg-slate-900 border-b border-white/5 flex flex-col z-10 flex-none">
-         <div className="flex justify-between items-center mb-2">
-            <div>
-                <div className="text-[8px] font-black text-slate-500 tracking-[0.2em] flex items-center gap-1.5 uppercase">
-                    {mode} ANALYTICS 
-                    <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'} animate-pulse`} />
-                </div>
-                <div className="text-sm font-black tracking-tight uppercase">{teamA} <span className="text-brand-500">v</span> {teamB}</div>
-            </div>
-            <button 
-                onClick={() => setUseAiCamera(!useAiCamera)} 
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black transition-all ${useAiCamera ? 'bg-brand-500 text-white' : 'bg-slate-800 text-slate-400'}`}
-            >
-                {useAiCamera ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                {useAiCamera ? 'AI ON' : 'AI OFF'}
-            </button>
-         </div>
-         {target && (
-             <div className="bg-brand-500/10 border border-brand-500/20 py-2 rounded-xl text-center">
-                <span className="text-brand-400 text-[9px] font-black tracking-widest uppercase">Target {target} | Need {Math.max(0, target - runs)} from {Math.max(0, (overs * 6) - (oversCount * 6 + ballsThisOver))} balls</span>
-             </div>
-         )}
-      </div>
-
-      {/* Main Content Area (Flexible) */}
-      <div className="flex-1 flex flex-col overflow-hidden px-4">
-        
-        {/* Batters */}
-        <div className="py-2 flex gap-2">
-            <PlayerStatCard label="Striker" isStriker={true} player={battingRoster.find(r => r.id === strikerId)} />
-            <PlayerStatCard label="Non-Striker" isStriker={false} player={battingRoster.find(r => r.id === nonStrikerId)} />
-        </div>
-
-        {/* Big Score */}
-        <div className="flex-none text-center py-1">
-            <div className="text-5xl font-black tabular-nums tracking-tighter">
-                {runs}<span className="text-3xl text-slate-800">/</span><span className="text-brand-400">{wickets}</span>
-            </div>
-            <div className="text-xs font-black text-slate-500 tracking-widest uppercase">
-                {oversCount}.{ballsThisOver} <span className="text-[8px]">Overs</span>
-            </div>
-        </div>
-
-        {/* Over History Sidebar Replacement (Inline Scroll) */}
-        <div className="py-2 flex items-center gap-2 overflow-x-auto scrollbar-none snap-x h-10">
-            <div className="text-[8px] font-black text-slate-700 uppercase tracking-widest pr-2 border-r border-white/10">Recent</div>
-            {currentOverHistory.map((ball, i) => (
-                <div key={i} className={`flex-none w-8 h-8 rounded-lg flex items-center justify-center font-black text-[10px] snap-center
-                    ${ball.wicketType !== 'none' ? 'bg-red-600' : ball.extras > 0 ? 'bg-orange-600' : 'bg-slate-800 border border-white/5'}`}>
-                    {ball.label}
-                </div>
-            ))}
-        </div>
-
-        {/* Stats Section Tabs/Accordion */}
-        <div className="flex-1 overflow-y-auto space-y-2 py-2 pr-1 scrollbar-none">
-            
-            {/* Wickets Analytics */}
-            <div>
-                <button onClick={() => setShowOutList(!showOutList)} className="flex items-center justify-between w-full p-2 bg-slate-900 border border-white/5 rounded-xl">
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                        <ShieldAlert className="w-3.5 h-3.5 text-red-500"/> Fallen Wickets ({stats?.outBatters?.length || 0})
+    const PlayerStatCard = ({ player, isStriker, label }) => {
+        const pStats = stats?.[label === 'Striker' ? 'striker' : 'nonStriker']
+        const isEmpty = !player
+        return (
+            <div className={`p-4 rounded-2xl border transition-all duration-300 flex-1 relative
+            ${isStriker ? 'bg-brand-500/10 border-brand-500/30' : 'bg-white/5 border-white/5 opacity-70'}`}>
+                <div className="flex justify-between items-center mb-1">
+                    <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isStriker ? 'text-brand-400' : 'text-slate-500'}`}>
+                        {label} {isStriker && <Circle className="w-1.5 h-1.5 fill-brand-500 text-brand-500 animate-pulse" />}
                     </span>
-                    {showOutList ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-                </button>
-                {showOutList && (
-                    <div className="mt-2 space-y-1.5 animate-fade-in px-1">
-                        {stats?.outBatters?.map((p, i) => (
-                            <div key={i} className="bg-black/40 p-3 rounded-2xl border-l-4 border-red-500 flex flex-col gap-1">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-xs font-black text-white uppercase">{p.name}</span>
-                                    <span className="text-xs font-black text-white">{p.runs} <span className="text-[10px] opacity-40">({p.balls})</span></span>
-                                </div>
-                                <div className="text-[9px] font-black text-slate-500 italic flex items-center gap-1.5 mt-0.5">
-                                    <Circle className="w-1.5 h-1.5 fill-red-500/40 text-transparent" />
-                                    b <span className="text-brand-400 opacity-90">{p.bowledBy}</span>
-                                </div>
+                    {isStriker && isUmpire && <button onClick={swapStrikeManual} className="p-1 px-2 bg-slate-800 rounded-lg transition-all active:rotate-180"><Repeat className="w-3 h-3 text-slate-400" /></button>}
+                </div>
+                {isEmpty ? (
+                    <div className="text-[10px] font-black text-slate-700 italic uppercase py-2 animate-pulse">Assign Player...</div>
+                ) : (
+                    <>
+                        <div className="text-base font-black truncate text-white uppercase tracking-tighter">{player.name}</div>
+                        <div className="flex justify-between items-end mt-1.5">
+                            <div className="flex gap-2">
+                                <span className="text-sm font-black text-white">{pStats?.runs || 0}<span className="text-[10px] text-slate-500 ml-1">({pStats?.balls || 0})</span></span>
                             </div>
-                        ))}
-                    </div>
+                            <span className="text-[9px] font-black text-brand-400 uppercase">SR {pStats?.sr || "0.0"}</span>
+                        </div>
+                    </>
                 )}
             </div>
+        )
+    }
 
-            {/* Bowler Analytics */}
-            <div>
-                <button onClick={() => setShowBowlerStats(!showBowlerStats)} className="flex items-center justify-between w-full p-2 bg-slate-900 border border-white/5 rounded-xl">
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                        <BarChart3 className="w-3.5 h-3.5 text-brand-500"/> Bowler History
-                    </span>
-                    {showBowlerStats ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-                </button>
-                {showBowlerStats && (
-                    <div className="mt-2 space-y-2 animate-fade-in px-1 pb-4">
-                        {stats?.allBowlers?.map((b, i) => (
-                            <div key={b.id} className="bg-white/5 rounded-2xl overflow-hidden border border-white/5">
-                                <button 
-                                    onClick={() => setExpandedBowlerId(expandedBowlerId === b.id ? null : b.id)}
-                                    className="w-full p-3 flex items-center gap-3 active:bg-white/5 transition-colors"
+    if (isLoading) return <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center font-black text-brand-500 animate-pulse uppercase tracking-[0.5em] gap-4"><Settings className="w-12 h-12 animate-spin-slow" /><span>Syncing Match</span></div>
+
+    return (
+        <div className="flex flex-col h-screen max-h-screen bg-slate-950 text-white overflow-hidden relative z-10 w-full font-sans pb-safe">
+
+            {/* PIN PROMPT OVERLAY */}
+            {showPinPrompt && (
+                <div className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-3xl flex flex-col items-center justify-center p-8 animate-fade-in shadow-inner">
+                    <div className="w-20 h-20 rounded-[2rem] bg-indigo-500/20 flex items-center justify-center mb-8 shadow-2xl shadow-indigo-500/10">
+                        <Lock className="w-10 h-10 text-indigo-500" />
+                    </div>
+                    <h2 className="text-3xl font-black text-white tracking-tighter mb-2 uppercase">Umpire Security</h2>
+                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-10 text-center">Enter the 4-digit PIN to start scoring</p>
+                    <div className="w-full max-w-xs space-y-6">
+                        <input
+                            type="password"
+                            maxLength={4}
+                            value={umpirePin}
+                            onChange={(e) => setUmpirePin(e.target.value)}
+                            placeholder="____"
+                            className="w-full bg-slate-900 border-2 border-slate-700 text-center text-4xl py-5 rounded-[2.5rem] font-black tracking-[1em] focus:border-indigo-500 outline-none transition-all text-white tabular-nums"
+                            autoFocus
+                        />
+                        <div className="grid grid-cols-2 gap-3">
+                            <button onClick={() => navigate(`/match/${matchId}?role=viewer`)} className="bg-slate-800 text-slate-400 p-5 rounded-[2rem] font-black text-[10px] uppercase tracking-widest">Watcher Mode</button>
+                            <button onClick={handlePinSubmit} className="bg-indigo-600 text-white p-5 rounded-[2rem] font-black text-[10px] uppercase tracking-widest shadow-xl shadow-indigo-600/20">Login</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {overlayMessage && (
+                <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center p-8 text-center animate-fade-in">
+                    <div className="w-20 h-20 rounded-[2rem] bg-brand-500/20 flex items-center justify-center mb-8 ring-4 ring-brand-500/10">
+                        {overlayMessage.type === 'break' ? <PlayCircle className="w-10 h-10 text-brand-500 animate-pulse" /> : <Trophy className="w-10 h-10 text-brand-500" />}
+                    </div>
+                    <h2 className="text-4xl font-black text-white tracking-widest mb-4 uppercase">{overlayMessage.title}</h2>
+                    <p className="text-lg text-brand-400 font-bold mb-12 uppercase max-w-xs">{overlayMessage.subtitle}</p>
+                    <div className="w-full space-y-3">
+                        {overlayMessage.type === 'break' && isUmpire && (
+                            <button onClick={resumeNextInning} className="bg-brand-500 text-white px-10 py-5 rounded-3xl font-black text-lg w-full active:scale-95 transition-all shadow-xl shadow-brand-500/20 flex items-center justify-center gap-3">
+                                <PlayCircle className="w-6 h-6" /> START 2ND INNING
+                            </button>
+                        )}
+                        <button onClick={() => setShowExitConfirm(true)} className="bg-slate-800 text-slate-400 px-10 py-5 rounded-3xl font-black text-lg w-full active:scale-95 transition-all border border-slate-700 uppercase">{isUmpire ? 'End Session' : 'Back to Lobby'}</button>
+                    </div>
+                </div>
+            )}
+
+            {showExitConfirm && (
+                <div className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 animate-fade-in">
+                    <div className="bg-slate-900 w-full max-w-sm rounded-[2.5rem] p-8 border border-white/10 shadow-3xl">
+                        <ShieldAlert className="w-12 h-12 text-yellow-500 mx-auto mb-6" />
+                        <h3 className="text-2xl font-black text-center mb-2 uppercase tracking-tighter">Are you sure?</h3>
+                        <p className="text-slate-500 text-center text-sm font-bold mb-8 italic uppercase tracking-tighter">Progress is saved. You can always resume later.</p>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button onClick={() => setShowExitConfirm(false)} className="bg-slate-800 p-4 rounded-2xl font-black text-sm uppercase tracking-widest border border-white/5">Cancel</button>
+                            <button onClick={() => navigate('/')} className="bg-red-600 p-4 rounded-2xl font-black text-sm uppercase tracking-widest border-b-4 border-red-900">Confirm</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* SELECTION OVERLAY */}
+            {isSelectionRequired && (
+                 <div className="absolute inset-x-0 bottom-0 z-50 bg-slate-900 border-t border-white/10 rounded-t-[2.5rem] p-6 animate-slide-up shadow-[0_-20px_50px_rgba(0,0,0,0.8)] pb-12">
+                    <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mb-6" />
+                    <div className="flex flex-col items-center mb-6">
+                        <div className={`p-3 rounded-full mb-3 ${needsBatters ? 'bg-brand-500/20 text-brand-500' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                            {needsBatters ? <UserPlus className="w-6 h-6" /> : <ShieldAlert className="w-6 h-6" />}
+                        </div>
+                        <h3 className="text-2xl font-black text-white tracking-tighter">
+                            {needsBatters ? "Select Batters" : "Select Bowler"}
+                        </h3>
+                        <p className="text-slate-500 text-xs mt-1 text-center font-bold">
+                            {needsBatters ? "Choose active striker & non-striker" : (needsBowler && stats?.lastBowlerId ? "Cricket Rule: Change the bowler." : "Pick a fresh bowler")}
+                        </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 max-h-[35vh] overflow-y-auto pb-6 scrollbar-none">
+                        {(needsBowler ? (matchDataFull?.innings[matchDataFull.innings.length - 1]?.battingTeam === initialData?.teamA ? currentRosterB : currentRosterA) : (matchDataFull?.innings[matchDataFull.innings.length - 1]?.battingTeam === initialData?.teamA ? currentRosterA : currentRosterB)).map(p => {
+                            const isActive = (p.id === strikerId || p.id === nonStrikerId || p.id === currentBowlerId)
+                            const isOut = stats?.outBatters?.some(out => out.id === p.id)
+                            const isConsecutive = needsBowler && p.id === stats?.lastBowlerId
+                            const bowlerStat = stats?.allBowlers?.find(b => b.id === p.id)
+                            const isLimitReached = needsBowler && initialData?.bowlerOverLimit > 0 && (bowlerStat?.overCount || 0) >= initialData.bowlerOverLimit
+                            return (
+                                <button
+                                    key={p.id}
+                                    disabled={isActive || isOut || isConsecutive || isLimitReached}
+                                    onClick={() => handleSelection(needsBatters ? (!strikerId ? 'striker' : 'nonStriker') : 'bowler', p.id)}
+                                    className={`p-3 rounded-xl font-black flex flex-col items-center gap-0.5 transition-all text-sm
+                                ${(isActive || isOut || isConsecutive || isLimitReached) ? 'opacity-20 bg-slate-800' : 'bg-slate-800 border border-slate-700 active:bg-brand-500 active:scale-95'}`}
                                 >
-                                    <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-black text-xs">
-                                        {b.wickets}W
-                                    </div>
-                                    <div className="flex-1 text-left">
-                                        <div className="text-xs font-black text-white uppercase truncate">{b.name}</div>
-                                        <div className="text-[9px] font-black text-slate-500 tracking-tighter uppercase">{b.overs} O · {b.runs} R · {b.econ} ERA</div>
-                                    </div>
-                                    {expandedBowlerId === b.id ? <ChevronDown className="w-4 h-4 text-slate-600" /> : <History className="w-4 h-4 text-slate-600" />}
+                                    <span className="text-white line-clamp-1 truncate">{p.name}</span>
+                                    <span className="text-[8px] text-slate-500 uppercase tracking-widest">
+                                        {isOut ? 'OUT' : isConsecutive ? 'JUST BOWLED' : isLimitReached ? 'LIMIT REACHED' : (isActive ? 'ON FIELD' : 'SELECT')}
+                                    </span>
                                 </button>
-                                
-                                {expandedBowlerId === b.id && (
-                                    <div className="bg-black/40 p-3 space-y-2 border-t border-white/5">
-                                        {b.overHistory?.map((oh, idx) => (
-                                            <div key={idx} className="flex items-center justify-between">
-                                                <span className="text-[9px] font-black text-slate-500 uppercase italic">Over {oh.overNumber}</span>
-                                                <div className="flex gap-1.5">
-                                                    {oh.balls.split(' ').map((ball, bidx) => (
-                                                        <span key={bidx} className={`w-5 h-5 rounded-md flex items-center justify-center text-[8px] font-black
-                                                            ${ball === 'W' ? 'bg-red-500/20 text-red-400 border border-red-500/20' : 
-                                                              ball === '6' || ball === '4' ? 'bg-brand-500/20 text-brand-400' : 'bg-white/5 text-slate-500 border border-white/5'}`}>
-                                                            {ball}
-                                                        </span>
-                                                    ))}
+                            )
+                        })}
+                    </div>
+                </div>
+            )}
+
+            <div className="px-5 py-4 bg-slate-900/80 border-b border-white/5 flex flex-col z-10 flex-none relative backdrop-blur-md">
+                <div className="flex justify-between items-center mb-4">
+                    <button onClick={() => navigate('/')} className="p-2 -ml-2 text-slate-500"><ChevronLeft className="w-6 h-6" /></button>
+                    <div className="text-center">
+                        <div className="text-[9px] font-black text-slate-500 tracking-[0.3em] flex items-center justify-center gap-2 uppercase">
+                            {isUmpire ? <Unlock className="w-2.5 h-2.5 text-brand-500" /> : <Lock className="w-2.5 h-2.5" />}
+                            {isUmpire ? 'UMPIRE CONSOLE' : 'MATCH STREAM'}
+                        </div>
+                        <div className="text-sm font-black tracking-tight uppercase">{initialData?.teamA} <span className="text-brand-500">vs</span> {initialData?.teamB}</div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button onClick={shareMatch} className="p-2.5 bg-brand-500/10 rounded-xl text-brand-500 transition-all active:scale-95"><Share2 className="w-5 h-5" /></button>
+                    </div>
+                </div>
+                <div className="flex p-1 bg-black/20 rounded-2xl border border-white/5">
+                    <button
+                        onClick={() => setActiveTab('live')}
+                        className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === 'live' ? 'bg-white/10 text-white shadow-lg shadow-white/5' : 'text-slate-600'}`}
+                    >LIVE HUB</button>
+                    <button
+                        onClick={() => setActiveTab('scorecard')}
+                        className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === 'scorecard' ? 'bg-white/10 text-white shadow-lg shadow-white/5' : 'text-slate-600'}`}
+                    >SCORECARD</button>
+                </div>
+            </div>
+
+            <div className="flex-1 flex flex-col overflow-hidden px-4 pt-4">
+                {activeTab === 'live' ? (
+                    <>
+                        <div className="py-2 flex gap-3">
+                            <PlayerStatCard label="Striker" isStriker={true} player={currentRosterA.concat(currentRosterB).find(r => r.id === strikerId)} />
+                            <PlayerStatCard label="Non-Striker" isStriker={false} player={currentRosterA.concat(currentRosterB).find(r => r.id === nonStrikerId)} />
+                        </div>
+                        <div className="flex-none text-center py-4 relative group">
+                            <div className="absolute inset-0 bg-brand-500/5 blur-3xl rounded-full opacity-20 scale-150" />
+                            <div className="text-7xl font-black tabular-nums tracking-tighter relative z-10">
+                                {runs}<span className="text-4xl text-slate-800">/</span><span className="text-brand-400">{wickets}</span>
+                            </div>
+                            <div className="text-xl font-black text-slate-600 tracking-[0.4em] uppercase mt-1 relative z-10">
+                                {oversCount}.{ballsThisOver} <span className="text-[12px] opacity-40">Overs</span>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto space-y-3 py-2 pr-1 scrollbar-none">
+                            <div className="py-3 flex items-center gap-3 overflow-x-auto scrollbar-none snap-x h-14 bg-slate-900/30 rounded-2xl px-3 border border-white/5">
+                                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest border-r border-white/10 pr-3 h-full flex items-center">Recent</span>
+                                {currentOverHistory.map((ball, i) => (
+                                    <div key={i} className={`flex-none w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs snap-center transition-all shadow-lg
+                                ${ball.wicketType !== 'none' ? 'bg-red-600 shadow-red-600/20' : ball.extras > 0 ? 'bg-orange-600' : 'bg-slate-800 border border-white/10'}`}>
+                                        {ball.label}
+                                    </div>
+                                ))}
+                            </div>
+                            {target && (
+                                <div className="p-4 bg-brand-500/10 border-2 border-brand-500/20 rounded-[2rem] flex items-center justify-between shadow-2xl relative overflow-hidden group">
+                                    <div className="absolute inset-0 bg-brand-500/10 animate-pulse opacity-50" />
+                                    <div className="flex flex-col relative z-10">
+                                        <span className="text-[10px] font-black text-brand-400 uppercase tracking-widest">Chasing Target</span>
+                                        <h4 className="text-2xl font-black text-white tabular-nums">{target}</h4>
+                                    </div>
+                                    <div className="text-right relative z-10">
+                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Need to win</span>
+                                        <h4 className="text-2xl font-black text-brand-500 tabular-nums">{Math.max(0, target - runs)}</h4>
+                                    </div>
+                                </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-3">
+                                <button onClick={() => setShowBowlerStats(!showBowlerStats)} className="flex items-center justify-between p-4 bg-slate-900/50 border border-white/10 rounded-2xl">
+                                    <div className="flex items-center gap-2">
+                                        <BarChart3 className="w-5 h-5 text-brand-500" />
+                                        <span className="text-[10px] font-black text-white uppercase tracking-tighter">Bowlers</span>
+                                    </div>
+                                    {showBowlerStats ? <ChevronDown className="w-4 h-4 text-slate-600" /> : <ChevronUp className="w-4 h-4 text-slate-600" />}
+                                </button>
+                                <button onClick={() => setShowOutList(!showOutList)} className="flex items-center justify-between p-4 bg-slate-900/50 border border-white/10 rounded-2xl">
+                                    <div className="flex items-center gap-2">
+                                        <ShieldAlert className="w-5 h-5 text-red-500" />
+                                        <span className="text-[10px] font-black text-white uppercase tracking-tighter">Out List</span>
+                                    </div>
+                                    {showOutList ? <ChevronDown className="w-4 h-4 text-slate-600" /> : <ChevronUp className="w-4 h-4 text-slate-600" />}
+                                </button>
+                            </div>
+                            {showBowlerStats && (
+                                <div className="space-y-2 animate-slide-up">
+                                    {stats?.allBowlers?.map(b => (
+                                        <div key={b.id} className="bg-white/5 p-4 rounded-2xl flex items-center justify-between border border-white/5">
+                                            <div className="flex flex-col">
+                                                <span className="text-[11px] font-black text-white uppercase">{b.name}</span>
+                                                <span className="text-[10px] font-black text-slate-600 uppercase tracking-tighter">{b.overCount}/{initialData?.bowlerOverLimit || '\u221E'} Overs Limit</span>
+                                            </div>
+                                            <div className="flex gap-4 font-black text-xs text-brand-400 tabular-nums">
+                                                <div>{b.wickets} <span className="text-[9px] text-slate-700">W</span></div>
+                                                <div>{b.runs} <span className="text-[9px] text-slate-700">R</span></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {!useAiCamera && <div className="mt-2 text-center">
+                                <div className="bg-slate-900 p-4 rounded-2xl border border-white/10 flex items-center justify-between shadow-xl">
+                                    <div className="flex items-center gap-3">
+                                        <UserCheck className="w-5 h-5 text-brand-500" />
+                                        <div className="flex flex-col text-left">
+                                            <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Active Bowler</span>
+                                            <span className="text-sm font-black text-white uppercase truncate max-w-[120px]">{currentBowlerId ? (currentRosterA.concat(currentRosterB).find(r => r.id === currentBowlerId)?.name) : "Waiting..."}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-4">
+                                        <div className="text-center"><p className="text-[8px] font-black text-slate-700">O</p><p className="text-sm font-black text-white">{stats?.bowler?.overs || '0.0'}</p></div>
+                                        <div className="text-center"><p className="text-[8px] font-black text-slate-700">W-R</p><p className="text-sm font-black text-indigo-400">{stats?.bowler?.wickets}-{stats?.bowler?.runs}</p></div>
+                                    </div>
+                                </div>
+                            </div>}
+                        </div>
+                    </>
+                ) : (
+                    /* SCORECARD VIEW */
+                    <div className="flex-1 overflow-y-auto space-y-6 pb-20 animate-fade-in scrollbar-none">
+                        {matchDataFull?.innings?.map((inn, idx) => (
+                            <div key={idx} className="bg-slate-900/50 border border-white/5 rounded-[2.5rem] overflow-hidden">
+                                <div className="bg-slate-800 p-5 flex justify-between items-center">
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Inning {idx + 1}</span>
+                                        <h3 className="text-xl font-black text-white uppercase tracking-tighter">{inn.battingTeam}</h3>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="text-2xl font-black text-brand-400 tabular-nums">{inn.totalRuns}/{inn.totalWickets}</span>
+                                        <p className="text-[10px] font-black text-slate-500 uppercase">Final Score</p>
+                                    </div>
+                                </div>
+                                <div className="p-4 space-y-4">
+                                    <div className="grid grid-cols-1 gap-2">
+                                        <div className="flex justify-between px-2 text-[9px] font-black text-slate-600 uppercase tracking-widest border-b border-white/5 pb-2">
+                                            <span>Batter</span>
+                                            <div className="flex gap-4"><span>R</span><span>B</span></div>
+                                        </div>
+                                        {inn.stats?.outBatters?.map((b, bidx) => (
+                                            <div key={bidx} className="flex flex-col p-2 bg-black/20 rounded-xl">
+                                                <div className="flex justify-between">
+                                                    <span className="text-xs font-black text-white uppercase">{b.name}</span>
+                                                    <div className="flex gap-4 font-black">
+                                                        <span className="w-4 text-center">{b.runs}</span>
+                                                        <span className="w-4 text-center opacity-40">{b.balls}</span>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[9px] font-black text-slate-600 italic mt-0.5">b {b.bowledBy}</span>
+                                            </div>
+                                        ))}
+                                        {[inn.stats?.striker, inn.stats?.nonStriker].filter(Boolean).map((b, bidx) => (
+                                            <div key={'active-' + bidx} className="flex flex-col p-2 bg-brand-500/5 border border-brand-500/10 rounded-xl">
+                                                <div className="flex justify-between">
+                                                    <span className="text-xs font-black text-brand-400 uppercase">{b.name}*</span>
+                                                    <div className="flex gap-4 font-black">
+                                                        <span className="w-4 text-center">{b.runs}</span>
+                                                        <span className="w-4 text-center opacity-40">{b.balls}</span>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[9px] font-black text-brand-500/50 uppercase tracking-tighter mt-0.5">Not Out</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2 pt-4">
+                                        <div className="flex justify-between px-2 text-[9px] font-black text-slate-600 uppercase tracking-widest border-b border-white/5 pb-2">
+                                            <span>Bowler</span>
+                                            <div className="flex gap-4"><span>O</span><span>R</span><span>W</span></div>
+                                        </div>
+                                        {inn.stats?.allBowlers?.map((b, bidx) => (
+                                            <div key={bidx} className="flex justify-between p-2 hover:bg-white/5 rounded-xl transition-colors">
+                                                <span className="text-xs font-black text-white uppercase">{b.name}</span>
+                                                <div className="flex gap-4 font-black text-xs">
+                                                    <span className="w-6 text-center tabular-nums">{b.overs}</span>
+                                                    <span className="w-6 text-center tabular-nums opacity-60">{b.runs}</span>
+                                                    <span className="w-6 text-center tabular-nums text-indigo-400">{b.wickets}</span>
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
-                                )}
+                                </div>
                             </div>
                         ))}
                     </div>
                 )}
             </div>
 
-            {/* Camera Spacer if Camera is on */}
-            {useAiCamera && (
-                <div className="min-h-[140px] my-2 bg-slate-900 border border-white/5 rounded-3xl relative overflow-hidden flex flex-col items-center justify-center">
-                    <div className="absolute top-3 left-3 right-3 z-10"><BowlerHUD /></div>
-                    <Camera className="w-6 h-6 text-slate-800 animate-pulse" />
+            {isUmpire && activeTab === 'live' && (
+                <div className={`p-5 bg-slate-900 border-t border-white/10 rounded-t-[3rem] shadow-[0_-20px_60px_rgba(0,0,0,0.8)] transition-all duration-500 ${(isSelectionRequired || overlayMessage || showExitConfirm) ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
+                    <div className="grid grid-cols-4 gap-3 mb-3">
+                        <button onClick={() => sendDelivery(0)} disabled={isPending} className="bg-slate-800 h-14 rounded-2xl font-black active:scale-90 transition-all text-xs border-b-4 border-black uppercase">Dot</button>
+                        <button onClick={() => sendDelivery(1)} disabled={isPending} className="bg-slate-800 h-14 rounded-2xl font-black text-xs border-b-4 border-black">1</button>
+                        <button onClick={() => sendDelivery(2)} disabled={isPending} className="bg-slate-800 h-14 rounded-2xl font-black text-xs border-b-4 border-black">2</button>
+                        <button onClick={() => sendDelivery(3)} disabled={isPending} className="bg-slate-800 h-14 rounded-2xl font-black text-xs border-b-4 border-black">3</button>
+                        <button onClick={() => sendDelivery(4)} disabled={isPending} className="col-span-2 bg-brand-600 h-16 rounded-[1.5rem] font-black text-3xl border-b-4 border-brand-900 active:border-b-2 active:translate-y-0.5 hover:brightness-110 shadow-lg shadow-brand-600/20">4</button>
+                        <button onClick={() => sendDelivery(6)} disabled={isPending} className="col-span-2 bg-brand-500 h-16 rounded-[1.5rem] font-black text-3xl border-b-4 border-brand-800 active:border-b-2 active:translate-y-0.5 hover:brightness-110 shadow-lg shadow-brand-500/20 ring-4 ring-brand-400 ring-inset">6</button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                        <button onClick={() => sendDelivery(0, true, 'wide', false)} className="bg-orange-600/10 text-orange-400 border border-orange-500/30 h-12 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95">Wide</button>
+                        <button onClick={() => sendDelivery(0, true, 'no-ball', false)} className="bg-orange-600/10 text-orange-400 border border-orange-500/30 h-12 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95">No Ball</button>
+                        <button onClick={() => sendDelivery(0, false, '', true)} className="bg-red-600 h-12 rounded-2xl font-black text-[10px] uppercase tracking-widest border-b-4 border-red-900 shadow-xl shadow-red-900/30 active:scale-95">Wicket</button>
+                    </div>
                 </div>
             )}
-            
-            {!useAiCamera && <BowlerHUD />}
-
         </div>
-
-      </div>
-
-      {/* Control Tray */}
-      <div className={`flex-none p-5 bg-slate-900 border-t border-white/10 rounded-t-[2.5rem] shadow-2xl transition-all duration-500 ${(isSelectionRequired || overlayMessage) ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
-         <div className="grid grid-cols-4 gap-3 mb-3">
-               <button onClick={() => sendDelivery(0)} disabled={isPending} className="bg-slate-800 h-14 rounded-2xl font-black active:scale-90 transition-all text-sm border-b-2 border-black">DOT</button>
-               <button onClick={() => sendDelivery(1)} disabled={isPending} className="bg-slate-800 h-14 rounded-2xl font-black text-sm border-b-2 border-black">1</button>
-               <button onClick={() => sendDelivery(2)} disabled={isPending} className="bg-slate-800 h-14 rounded-2xl font-black text-sm border-b-2 border-black">2</button>
-               <button onClick={() => sendDelivery(3)} disabled={isPending} className="bg-slate-800 h-14 rounded-2xl font-black text-sm border-b-2 border-black">3</button>
-               <button onClick={() => sendDelivery(4)} disabled={isPending} className="col-span-2 bg-brand-600 h-16 rounded-2xl font-black text-2xl border-b-4 border-brand-900 active:border-b-2 active:translate-y-0.5">4</button>
-               <button onClick={() => sendDelivery(6)} disabled={isPending} className="col-span-2 bg-brand-500 h-16 rounded-2xl font-black text-2xl border-b-4 border-brand-800 active:border-b-2 active:translate-y-0.5 ring-4 ring-brand-400 ring-inset">6</button>
-         </div>
-         <div className="grid grid-cols-3 gap-3">
-               <button onClick={() => sendDelivery(0, true, 'wide', false)} className="bg-orange-600/10 text-orange-400 border border-orange-500/20 h-12 rounded-xl font-black text-[10px] uppercase">Wide</button>
-               <button onClick={() => sendDelivery(0, true, 'no-ball', false)} className="bg-orange-600/10 text-orange-400 border border-orange-500/20 h-12 rounded-xl font-black text-[10px] uppercase">No Ball</button>
-               <button onClick={() => sendDelivery(0, false, '', true)} className="bg-red-600 h-12 rounded-xl font-black text-[10px] uppercase border-b-4 border-red-900 shadow-lg">Wicket</button>
-         </div>
-      </div>
-    </div>
-  )
+    )
 }

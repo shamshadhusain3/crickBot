@@ -8,7 +8,7 @@ import { useMutation } from '@tanstack/react-query'
 export default function Toss() {
   const navigate = useNavigate()
   
-  const { teamA, teamB, mode, rosterA, rosterB, overs, includeExtras, setTossResult, setActiveMatch, setSetupData } = useMatchStore()
+  const { teamA, teamB, mode, rosterA, rosterB, overs, includeExtras, umpirePin, setTossResult, setActiveMatch, setSetupData, addMatchToCollection } = useMatchStore()
   
   // Automatically boot out if state is missing
   if (!teamA || !teamB) {
@@ -24,11 +24,11 @@ export default function Toss() {
     mutationFn: (payload) => matchService.createMatch(payload),
     onSuccess: (data) => {
         // Hydrate Zustand with the new official backend match ID and the database-tracked rosters
-        setActiveMatch(data.id)
-        if (data.mode === 'pro') {
-           setSetupData({ rosterA: data.rosterA, rosterB: data.rosterB, mode: data.mode })
-        }
-        navigate('/live')
+        // Save to my collection
+        addMatchToCollection(data.id, data.umpirePin)
+
+        // Navigate as Umpire and pass the PIN in state for auto-verification
+        navigate(`/match/${data.id}?role=umpire`, { state: { autoVerifyPin: data.umpirePin } })
     },
     onError: (err) => {
         console.error("Match Start Failed", err)
@@ -59,7 +59,8 @@ export default function Toss() {
        battingTeam: batTeam,
        mode,
        rosterA,
-       rosterB
+       rosterB,
+       umpirePin
     });
   }
 
