@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { Camera, Settings, Circle, Wifi, WifiOff, UserPlus, Repeat, UserCheck, ShieldAlert, ChevronDown, ChevronUp, Eye, EyeOff, BarChart3, History, PlayCircle, LogOut, XCircle, CheckCircle2, Share2, Lock, Unlock, Clipboard, ArrowLeftRight, Trophy, ChevronLeft } from 'lucide-react'
+import { Camera, Settings, Circle, Wifi, WifiOff, UserPlus, Repeat, UserCheck, ShieldAlert, ChevronDown, ChevronUp, Eye, EyeOff, BarChart3, History, PlayCircle, LogOut, XCircle, CheckCircle2, Share2, Lock, Unlock, Clipboard, ArrowLeftRight, Trophy, ChevronLeft, Calendar } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 import { useMatchStore } from '../store/useMatchStore'
 import { matchService } from '../services/matchService'
@@ -36,7 +36,7 @@ export default function LiveMatch() {
     const [target, setTarget] = useState(null)
     const [showOutList, setShowOutList] = useState(false)
     const [showBowlerStats, setShowBowlerStats] = useState(false)
-    const [expandedBowlerId, setExpandedBowlerId] = useState(null)
+    const [expandedInnings, setExpandedInnings] = useState([]) // For scorecard
     const [useAiCamera, setUseAiCamera] = useState(false)
     const [showExitConfirm, setShowExitConfirm] = useState(false)
     const [activeTab, setActiveTab] = useState('live') // 'live', 'scorecard'
@@ -49,8 +49,7 @@ export default function LiveMatch() {
     // --- API HYDRATION ---
     const { data: initialData, isLoading, refetch } = useQuery({
         queryKey: ['match', matchId],
-        queryFn: () => matchService.getMatch(matchId),
-        enabled: !!matchId
+        queryFn: () => matchService.getMatch(matchId)
     })
 
     useEffect(() => {
@@ -64,6 +63,7 @@ export default function LiveMatch() {
             setCurrentBowlerId(lastInning.currentBowlerId || null)
             setTarget(initialData.target)
             setStats(initialData.stats)
+            setExpandedInnings([initialData.innings.length - 1]) // Expand current inning by default
 
             const legalBalls = lastInning.deliveries.filter(d => d.extras === 0).length
             setOversCount(Math.floor(legalBalls / 6))
@@ -166,6 +166,10 @@ export default function LiveMatch() {
         updatePlayers({ strikerId: nonStrikerId, nonStrikerId: strikerId })
     }
 
+    const toggleInningExpansion = (idx) => {
+        setExpandedInnings(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx])
+    }
+
     const isUmpire = role === 'umpire' && isPinVerified
     const needsBatters = initialData?.mode === 'pro' && (!strikerId || !nonStrikerId)
     const needsBowler = initialData?.mode === 'pro' && strikerId && nonStrikerId && !currentBowlerId
@@ -173,6 +177,13 @@ export default function LiveMatch() {
 
     const currentRosterA = initialData?.rosterA || storeRosterA || []
     const currentRosterB = initialData?.rosterB || storeRosterB || []
+
+    const remainingBalls = useMemo(() => {
+        if (!target || !initialData) return 0
+        const totalBalls = initialData.overs * 6
+        const bowled = (oversCount * 6) + ballsThisOver
+        return Math.max(0, totalBalls - bowled)
+    }, [target, oversCount, ballsThisOver, initialData])
 
     const PlayerStatCard = ({ player, isStriker, label }) => {
         const pStats = stats?.[label === 'Striker' ? 'striker' : 'nonStriker']
@@ -336,6 +347,17 @@ export default function LiveMatch() {
             <div className="flex-1 flex flex-col overflow-hidden px-4 pt-4">
                 {activeTab === 'live' ? (
                     <>
+                        <div className="flex justify-between items-center px-1 mb-1">
+                             <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-800/50 rounded-full border border-white/5">
+                                 <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                                 <span className="text-[9px] font-black text-white uppercase tracking-widest">Inning {matchDataFull?.innings?.length || 1}</span>
+                             </div>
+                             <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-800/50 rounded-full border border-white/5">
+                                 <Calendar className="w-3 h-3 text-brand-400" />
+                                 <span className="text-[9px] font-black text-white uppercase tracking-widest">Overs: {initialData?.overs || '0'}</span>
+                             </div>
+                        </div>
+
                         <div className="py-2 flex gap-3">
                             <PlayerStatCard label="Striker" isStriker={true} player={currentRosterA.concat(currentRosterB).find(r => r.id === strikerId)} />
                             <PlayerStatCard label="Non-Striker" isStriker={false} player={currentRosterA.concat(currentRosterB).find(r => r.id === nonStrikerId)} />
@@ -349,6 +371,56 @@ export default function LiveMatch() {
                                 {oversCount}.{ballsThisOver} <span className="text-[12px] opacity-40">Overs</span>
                             </div>
                         </div>
+                        {target ? (
+                            isUmpire ? (
+                                /* MINI VERSION FOR UMPIRE */
+                                <div className="mb-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center justify-between text-[10px] font-black uppercase tracking-tighter shadow-lg">
+                                    <div className="flex items-center gap-1.5">
+                                        <Trophy className="w-3.5 h-3.5 text-indigo-400" />
+                                        <span className="text-slate-500">Target</span>
+                                        <span className="text-white text-xs">{target}</span>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-slate-500">Need</span>
+                                            <span className="text-brand-400 text-xs">{Math.max(0, target - runs)}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-slate-500">Balls</span>
+                                            <span className="text-indigo-400 text-xs">{remainingBalls}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                /* FULL VERSION FOR VIEWERS */
+                                <div className="mb-6 p-6 bg-indigo-500/10 border-2 border-indigo-500/20 rounded-[2.5rem] relative overflow-hidden group shadow-2xl">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                                        <Trophy className="w-12 h-12 text-indigo-400" />
+                                    </div>
+                                    <div className="flex justify-between items-start relative z-10 mb-4">
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Target</span>
+                                            <span className="text-4xl font-black text-white tabular-nums tracking-tighter">{target}</span>
+                                        </div>
+                                        <div className="text-center flex flex-col">
+                                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Need</span>
+                                            <span className="text-4xl font-black text-brand-400 tabular-nums tracking-tighter">{Math.max(0, target - runs)}</span>
+                                        </div>
+                                        <div className="text-right flex flex-col">
+                                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Balls</span>
+                                            <span className="text-4xl font-black text-indigo-400 tabular-nums tracking-tighter">{remainingBalls}</span>
+                                        </div>
+                                    </div>
+                                    <div className="pt-3 border-t border-white/5 text-center relative z-10">
+                                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">
+                                            <span className="text-brand-400">{Math.max(0, target - runs)}</span> Runs needed off <span className="text-indigo-400">{remainingBalls}</span> balls
+                                        </p>
+                                    </div>
+                                    <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
+                                </div>
+                            )
+                        ) : null}
+
                         <div className="flex-1 overflow-y-auto space-y-3 py-2 pr-1 scrollbar-none">
                             <div className="py-3 flex items-center gap-3 overflow-x-auto scrollbar-none snap-x h-14 bg-slate-900/30 rounded-2xl px-3 border border-white/5">
                                 <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest border-r border-white/10 pr-3 h-full flex items-center">Recent</span>
@@ -359,19 +431,6 @@ export default function LiveMatch() {
                                     </div>
                                 ))}
                             </div>
-                            {target && (
-                                <div className="p-4 bg-brand-500/10 border-2 border-brand-500/20 rounded-[2rem] flex items-center justify-between shadow-2xl relative overflow-hidden group">
-                                    <div className="absolute inset-0 bg-brand-500/10 animate-pulse opacity-50" />
-                                    <div className="flex flex-col relative z-10">
-                                        <span className="text-[10px] font-black text-brand-400 uppercase tracking-widest">Chasing Target</span>
-                                        <h4 className="text-2xl font-black text-white tabular-nums">{target}</h4>
-                                    </div>
-                                    <div className="text-right relative z-10">
-                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Need to win</span>
-                                        <h4 className="text-2xl font-black text-brand-500 tabular-nums">{Math.max(0, target - runs)}</h4>
-                                    </div>
-                                </div>
-                            )}
                             <div className="grid grid-cols-2 gap-3">
                                 <button onClick={() => setShowBowlerStats(!showBowlerStats)} className="flex items-center justify-between p-4 bg-slate-900/50 border border-white/10 rounded-2xl">
                                     <div className="flex items-center gap-2">
@@ -424,68 +483,80 @@ export default function LiveMatch() {
                 ) : (
                     /* SCORECARD VIEW */
                     <div className="flex-1 overflow-y-auto space-y-6 pb-20 animate-fade-in scrollbar-none">
-                        {matchDataFull?.innings?.map((inn, idx) => (
-                            <div key={idx} className="bg-slate-900/50 border border-white/5 rounded-[2.5rem] overflow-hidden">
-                                <div className="bg-slate-800 p-5 flex justify-between items-center">
-                                    <div className="flex flex-col">
-                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Inning {idx + 1}</span>
-                                        <h3 className="text-xl font-black text-white uppercase tracking-tighter">{inn.battingTeam}</h3>
-                                    </div>
-                                    <div className="text-right">
-                                        <span className="text-2xl font-black text-brand-400 tabular-nums">{inn.totalRuns}/{inn.totalWickets}</span>
-                                        <p className="text-[10px] font-black text-slate-500 uppercase">Final Score</p>
-                                    </div>
-                                </div>
-                                <div className="p-4 space-y-4">
-                                    <div className="grid grid-cols-1 gap-2">
-                                        <div className="flex justify-between px-2 text-[9px] font-black text-slate-600 uppercase tracking-widest border-b border-white/5 pb-2">
-                                            <span>Batter</span>
-                                            <div className="flex gap-4"><span>R</span><span>B</span></div>
+                        {matchDataFull?.innings?.map((inn, idx) => {
+                            const isExpanded = expandedInnings.includes(idx)
+                            return (
+                                <div key={idx} className="bg-slate-900/50 border border-white/5 rounded-[2.5rem] overflow-hidden transition-all duration-300">
+                                    <button 
+                                        onClick={() => toggleInningExpansion(idx)}
+                                        className="w-full bg-slate-800 p-5 flex justify-between items-center active:bg-slate-700 transition-colors"
+                                    >
+                                        <div className="flex flex-col text-left">
+                                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Inning {idx + 1}</span>
+                                            <h3 className="text-xl font-black text-white uppercase tracking-tighter">{inn.battingTeam}</h3>
                                         </div>
-                                        {inn.stats?.outBatters?.map((b, bidx) => (
-                                            <div key={bidx} className="flex flex-col p-2 bg-black/20 rounded-xl">
-                                                <div className="flex justify-between">
-                                                    <span className="text-xs font-black text-white uppercase">{b.name}</span>
-                                                    <div className="flex gap-4 font-black">
-                                                        <span className="w-4 text-center">{b.runs}</span>
-                                                        <span className="w-4 text-center opacity-40">{b.balls}</span>
-                                                    </div>
-                                                </div>
-                                                <span className="text-[9px] font-black text-slate-600 italic mt-0.5">b {b.bowledBy}</span>
+                                        <div className="flex items-center gap-6">
+                                            <div className="text-right">
+                                                <span className="text-2xl font-black text-brand-400 tabular-nums">{inn.totalRuns}/{inn.totalWickets}</span>
+                                                <p className="text-[10px] font-black text-slate-500 uppercase">Score</p>
                                             </div>
-                                        ))}
-                                        {[inn.stats?.striker, inn.stats?.nonStriker].filter(Boolean).map((b, bidx) => (
-                                            <div key={'active-' + bidx} className="flex flex-col p-2 bg-brand-500/5 border border-brand-500/10 rounded-xl">
-                                                <div className="flex justify-between">
-                                                    <span className="text-xs font-black text-brand-400 uppercase">{b.name}*</span>
-                                                    <div className="flex gap-4 font-black">
-                                                        <span className="w-4 text-center">{b.runs}</span>
-                                                        <span className="w-4 text-center opacity-40">{b.balls}</span>
-                                                    </div>
-                                                </div>
-                                                <span className="text-[9px] font-black text-brand-500/50 uppercase tracking-tighter mt-0.5">Not Out</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="grid grid-cols-1 gap-2 pt-4">
-                                        <div className="flex justify-between px-2 text-[9px] font-black text-slate-600 uppercase tracking-widest border-b border-white/5 pb-2">
-                                            <span>Bowler</span>
-                                            <div className="flex gap-4"><span>O</span><span>R</span><span>W</span></div>
+                                            {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-600" /> : <ChevronDown className="w-5 h-5 text-slate-600" />}
                                         </div>
-                                        {inn.stats?.allBowlers?.map((b, bidx) => (
-                                            <div key={bidx} className="flex justify-between p-2 hover:bg-white/5 rounded-xl transition-colors">
-                                                <span className="text-xs font-black text-white uppercase">{b.name}</span>
-                                                <div className="flex gap-4 font-black text-xs">
-                                                    <span className="w-6 text-center tabular-nums">{b.overs}</span>
-                                                    <span className="w-6 text-center tabular-nums opacity-60">{b.runs}</span>
-                                                    <span className="w-6 text-center tabular-nums text-indigo-400">{b.wickets}</span>
+                                    </button>
+
+                                    {isExpanded && (
+                                        <div className="p-4 space-y-4 animate-slide-up">
+                                            <div className="grid grid-cols-1 gap-2">
+                                                <div className="flex justify-between px-2 text-[9px] font-black text-slate-600 uppercase tracking-widest border-b border-white/5 pb-2">
+                                                    <span>Batter</span>
+                                                    <div className="flex gap-4"><span>R</span><span>B</span></div>
                                                 </div>
+                                                {inn.stats?.outBatters?.map((b, bidx) => (
+                                                    <div key={bidx} className="flex flex-col p-2 bg-black/20 rounded-xl">
+                                                        <div className="flex justify-between">
+                                                            <span className="text-xs font-black text-white uppercase">{b.name}</span>
+                                                            <div className="flex gap-4 font-black">
+                                                                <span className="w-4 text-center">{b.runs}</span>
+                                                                <span className="w-4 text-center opacity-40">{b.balls}</span>
+                                                            </div>
+                                                        </div>
+                                                        <span className="text-[9px] font-black text-slate-600 italic mt-0.5">b {b.bowledBy}</span>
+                                                    </div>
+                                                ))}
+                                                {[inn.stats?.striker, inn.stats?.nonStriker].filter(Boolean).map((b, bidx) => (
+                                                    <div key={'active-' + bidx} className="flex flex-col p-2 bg-brand-500/5 border border-brand-500/10 rounded-xl">
+                                                        <div className="flex justify-between">
+                                                            <span className="text-xs font-black text-brand-400 uppercase">{b.name}*</span>
+                                                            <div className="flex gap-4 font-black">
+                                                                <span className="w-4 text-center">{b.runs}</span>
+                                                                <span className="w-4 text-center opacity-40">{b.balls}</span>
+                                                            </div>
+                                                        </div>
+                                                        <span className="text-[9px] font-black text-brand-500/50 uppercase tracking-tighter mt-0.5">Not Out</span>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        ))}
-                                    </div>
+                                            <div className="grid grid-cols-1 gap-2 pt-4">
+                                                <div className="flex justify-between px-2 text-[9px] font-black text-slate-600 uppercase tracking-widest border-b border-white/5 pb-2">
+                                                    <span>Bowler</span>
+                                                    <div className="flex gap-4"><span>O</span><span>R</span><span>W</span></div>
+                                                </div>
+                                                {inn.stats?.allBowlers?.map((b, bidx) => (
+                                                    <div key={bidx} className="flex justify-between p-2 hover:bg-white/5 rounded-xl transition-colors">
+                                                        <span className="text-xs font-black text-white uppercase">{b.name}</span>
+                                                        <div className="flex gap-4 font-black text-xs">
+                                                            <span className="w-6 text-center tabular-nums">{b.overs}</span>
+                                                            <span className="w-6 text-center tabular-nums opacity-60">{b.runs}</span>
+                                                            <span className="w-6 text-center tabular-nums text-indigo-400">{b.wickets}</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            </div>
-                        ))}
+                            )
+                        })}
                     </div>
                 )}
             </div>
