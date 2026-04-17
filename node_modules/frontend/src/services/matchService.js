@@ -11,7 +11,12 @@ export const matchService = {
   },
 
   recordDelivery: async (matchId, payload) => {
-    // API Expects: { run, isExtra, extraType, isWicket }
+    // API Expects: { run, isExtra, extraType, isWicket, (batterId, bowlerId auto-handled by backend pro state) }
     return await apiClient.post(`/matches/${matchId}/deliveries`, payload);
+  },
+
+  updateActivePlayers: async (matchId, payload) => {
+    // API Expects: { strikerId, nonStrikerId, currentBowlerId }
+    return await apiClient.post(`/matches/${matchId}/innings/players`, payload);
   }
 };

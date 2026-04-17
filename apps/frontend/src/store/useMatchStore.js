@@ -8,8 +8,11 @@ export const useMatchStore = create(
     (set) => ({
       // State
       activeMatchId: null,
+      mode: 'quick', 
       teamA: '',
       teamB: '',
+      rosterA: [],
+      rosterB: [],
       overs: 5,
       includeExtras: true,
       battingTeam: '',
@@ -29,6 +32,9 @@ export const useMatchStore = create(
       
       clearMatch: () => set({ 
          activeMatchId: null, 
+         mode: 'quick',
+         rosterA: [],
+         rosterB: [],
          teamA: '', 
          teamB: '', 
          battingTeam: '', 

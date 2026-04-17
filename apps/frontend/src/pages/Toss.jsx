@@ -8,8 +8,7 @@ import { useMutation } from '@tanstack/react-query'
 export default function Toss() {
   const navigate = useNavigate()
   
-  // Cleanly extract all values globally from Zustand
-  const { teamA, teamB, overs, includeExtras, setTossResult, setActiveMatch } = useMatchStore()
+  const { teamA, teamB, mode, rosterA, rosterB, overs, includeExtras, setTossResult, setActiveMatch, setSetupData } = useMatchStore()
   
   // Automatically boot out if state is missing
   if (!teamA || !teamB) {
@@ -24,8 +23,11 @@ export default function Toss() {
   const { mutateAsync: launchMatch, isPending } = useMutation({
     mutationFn: (payload) => matchService.createMatch(payload),
     onSuccess: (data) => {
-        // Hydrate Zustand with the new official backend match ID
+        // Hydrate Zustand with the new official backend match ID and the database-tracked rosters
         setActiveMatch(data.id)
+        if (data.mode === 'pro') {
+           setSetupData({ rosterA: data.rosterA, rosterB: data.rosterB, mode: data.mode })
+        }
         navigate('/live')
     },
     onError: (err) => {
@@ -54,7 +56,10 @@ export default function Toss() {
        teamB, 
        overs, 
        includeExtras, 
-       battingTeam: batTeam
+       battingTeam: batTeam,
+       mode,
+       rosterA,
+       rosterB
     });
   }
 

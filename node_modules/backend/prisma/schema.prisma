@@ -34,7 +34,8 @@ model Match {
   mode          String   @default("quick") // quick, pro
   overs         Int
   includeExtras Boolean  @default(true)
-  status        String   @default("scheduled") 
+  status        String   @default("live") // live, completed
+  target        Int?
   innings       Inning[]
 }
 
@@ -45,6 +46,13 @@ model Inning {
   battingTeam  String
   totalRuns    Int      @default(0)
   totalWickets Int      @default(0)
+  status       String   @default("active") // active, completed
+  
+  // Professional Field State
+  strikerId       String?
+  nonStrikerId    String?
+  currentBowlerId String?
+
   deliveries   Delivery[]
 }
 
