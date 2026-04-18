@@ -170,10 +170,23 @@ export default function LiveMatch() {
         setExpandedInnings(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx])
     }
 
+    const [forcingChange, setForcingChange] = useState(null) // 'striker', 'nonStriker', 'bowler'
+
     const isUmpire = role === 'umpire' && isPinVerified
-    const needsBatters = initialData?.mode === 'pro' && (!strikerId || !nonStrikerId)
-    const needsBowler = initialData?.mode === 'pro' && strikerId && nonStrikerId && !currentBowlerId
+    const needsBatters = initialData?.mode === 'pro' && (!strikerId || !nonStrikerId || forcingChange === 'striker' || forcingChange === 'nonStriker')
+    const needsBowler = initialData?.mode === 'pro' && !needsBatters && (!currentBowlerId || forcingChange === 'bowler')
     const isSelectionRequired = isUmpire && (needsBatters || needsBowler)
+
+    const handleSelectionUpdate = (type, playerId) => {
+        handleSelection(type, playerId)
+        setForcingChange(null)
+    }
+
+    const handleRetiredHurt = (targetType) => {
+        if (targetType === 'striker') updatePlayers({ strikerId: null })
+        else updatePlayers({ nonStrikerId: null })
+        setForcingChange(targetType)
+    }
 
     const currentRosterA = initialData?.rosterA || storeRosterA || []
     const currentRosterB = initialData?.rosterB || storeRosterB || []
@@ -188,6 +201,8 @@ export default function LiveMatch() {
     const PlayerStatCard = ({ player, isStriker, label }) => {
         const pStats = stats?.[label === 'Striker' ? 'striker' : 'nonStriker']
         const isEmpty = !player
+        const type = label === 'Striker' ? 'striker' : 'nonStriker'
+        
         return (
             <div className={`p-4 rounded-2xl border transition-all duration-300 flex-1 relative
             ${isStriker ? 'bg-brand-500/10 border-brand-500/30' : 'bg-white/5 border-white/5 opacity-70'}`}>
@@ -195,7 +210,29 @@ export default function LiveMatch() {
                     <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isStriker ? 'text-brand-400' : 'text-slate-500'}`}>
                         {label} {isStriker && <Circle className="w-1.5 h-1.5 fill-brand-500 text-brand-500 animate-pulse" />}
                     </span>
-                    {isStriker && isUmpire && <button onClick={swapStrikeManual} className="p-1 px-2 bg-slate-800 rounded-lg transition-all active:rotate-180"><Repeat className="w-3 h-3 text-slate-400" /></button>}
+                    <div className="flex gap-2">
+                        {isUmpire && !isEmpty && (
+                            <button 
+                                onClick={() => handleRetiredHurt(type)} 
+                                className="p-1 px-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-[8px] font-black text-red-500 uppercase tracking-tighter"
+                            >
+                                Retire
+                            </button>
+                        )}
+                        {isUmpire && (
+                            <button 
+                                onClick={() => setForcingChange(type)} 
+                                className="p-1 px-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-[8px] font-black text-slate-400 uppercase tracking-tighter"
+                            >
+                                Change
+                            </button>
+                        )}
+                        {isStriker && isUmpire && !isEmpty && (
+                            <button onClick={swapStrikeManual} className="p-1 px-2 bg-slate-800 rounded-lg transition-all active:rotate-180">
+                                <Repeat className="w-3 h-3 text-slate-400" />
+                            </button>
+                        )}
+                    </div>
                 </div>
                 {isEmpty ? (
                     <div className="text-[10px] font-black text-slate-700 italic uppercase py-2 animate-pulse">Assign Player...</div>
@@ -280,30 +317,33 @@ export default function LiveMatch() {
             {/* SELECTION OVERLAY */}
             {isSelectionRequired && (
                  <div className="absolute inset-x-0 bottom-0 z-50 bg-slate-900 border-t border-white/10 rounded-t-[2.5rem] p-6 animate-slide-up shadow-[0_-20px_50px_rgba(0,0,0,0.8)] pb-12">
-                    <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mb-6" />
+                    <div className="flex justify-between items-center mb-6">
+                        <div className="w-10 h-1 bg-slate-700 rounded-full" />
+                        <XCircle className="w-6 h-6 text-slate-600 cursor-pointer" onClick={() => setForcingChange(null)} />
+                    </div>
                     <div className="flex flex-col items-center mb-6">
                         <div className={`p-3 rounded-full mb-3 ${needsBatters ? 'bg-brand-500/20 text-brand-500' : 'bg-indigo-500/20 text-indigo-400'}`}>
                             {needsBatters ? <UserPlus className="w-6 h-6" /> : <ShieldAlert className="w-6 h-6" />}
                         </div>
                         <h3 className="text-2xl font-black text-white tracking-tighter">
-                            {needsBatters ? "Select Batters" : "Select Bowler"}
+                            {needsBatters ? (forcingChange ? `Replace ${forcingChange}` : "Select Batters") : (forcingChange ? "Swap Bowler" : "Select Bowler")}
                         </h3>
                         <p className="text-slate-500 text-xs mt-1 text-center font-bold">
-                            {needsBatters ? "Choose active striker & non-striker" : (needsBowler && stats?.lastBowlerId ? "Cricket Rule: Change the bowler." : "Pick a fresh bowler")}
+                            {needsBatters ? "Choose active striker & non-striker" : (needsBowler && stats?.lastBowlerId && !forcingChange ? "Cricket Rule: Change the bowler." : "Pick a fresh bowler")}
                         </p>
                     </div>
                     <div className="grid grid-cols-2 gap-2 max-h-[35vh] overflow-y-auto pb-6 scrollbar-none">
                         {(needsBowler ? (matchDataFull?.innings[matchDataFull.innings.length - 1]?.battingTeam === initialData?.teamA ? currentRosterB : currentRosterA) : (matchDataFull?.innings[matchDataFull.innings.length - 1]?.battingTeam === initialData?.teamA ? currentRosterA : currentRosterB)).map(p => {
                             const isActive = (p.id === strikerId || p.id === nonStrikerId || p.id === currentBowlerId)
                             const isOut = stats?.outBatters?.some(out => out.id === p.id)
-                            const isConsecutive = needsBowler && p.id === stats?.lastBowlerId
+                            const isConsecutive = needsBowler && p.id === stats?.lastBowlerId && !forcingChange
                             const bowlerStat = stats?.allBowlers?.find(b => b.id === p.id)
                             const isLimitReached = needsBowler && initialData?.bowlerOverLimit > 0 && (bowlerStat?.overCount || 0) >= initialData.bowlerOverLimit
                             return (
                                 <button
                                     key={p.id}
                                     disabled={isActive || isOut || isConsecutive || isLimitReached}
-                                    onClick={() => handleSelection(needsBatters ? (!strikerId ? 'striker' : 'nonStriker') : 'bowler', p.id)}
+                                    onClick={() => handleSelectionUpdate(needsBatters ? (forcingChange === 'nonStriker' || (forcingChange === null && strikerId) ? 'nonStriker' : 'striker') : 'bowler', p.id)}
                                     className={`p-3 rounded-xl font-black flex flex-col items-center gap-0.5 transition-all text-sm
                                 ${(isActive || isOut || isConsecutive || isLimitReached) ? 'opacity-20 bg-slate-800' : 'bg-slate-800 border border-slate-700 active:bg-brand-500 active:scale-95'}`}
                                 >
@@ -468,7 +508,17 @@ export default function LiveMatch() {
                                     <div className="flex items-center gap-3">
                                         <UserCheck className="w-5 h-5 text-brand-500" />
                                         <div className="flex flex-col text-left">
-                                            <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Active Bowler</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Active Bowler</span>
+                                                {isUmpire && currentBowlerId && (
+                                                    <button 
+                                                        onClick={() => setForcingChange('bowler')}
+                                                        className="p-1 px-2 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg text-[7px] font-black text-indigo-400 uppercase"
+                                                    >
+                                                        Swap Mid-Over
+                                                    </button>
+                                                )}
+                                            </div>
                                             <span className="text-sm font-black text-white uppercase truncate max-w-[120px]">{currentBowlerId ? (currentRosterA.concat(currentRosterB).find(r => r.id === currentBowlerId)?.name) : "Waiting..."}</span>
                                         </div>
                                     </div>
