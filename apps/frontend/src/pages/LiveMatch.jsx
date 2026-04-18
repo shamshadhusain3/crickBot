@@ -37,6 +37,7 @@ export default function LiveMatch() {
     const [showOutList, setShowOutList] = useState(false)
     const [showBowlerStats, setShowBowlerStats] = useState(false)
     const [expandedInnings, setExpandedInnings] = useState([]) // For scorecard
+    const [expandedBowlerId, setExpandedBowlerId] = useState(null)
     const [useAiCamera, setUseAiCamera] = useState(false)
     const [showExitConfirm, setShowExitConfirm] = useState(false)
     const [activeTab, setActiveTab] = useState('live') // 'live', 'scorecard'
@@ -199,9 +200,10 @@ export default function LiveMatch() {
     }, [target, oversCount, ballsThisOver, initialData])
 
     const PlayerStatCard = ({ player, isStriker, label }) => {
-        const pStats = stats?.[label === 'Striker' ? 'striker' : 'nonStriker']
-        const isEmpty = !player
         const type = label === 'Striker' ? 'striker' : 'nonStriker'
+        const pStats = stats?.[type]
+        const isEmpty = !player
+        const hasPlayed = (pStats?.balls || 0) > 0
         
         return (
             <div className={`p-4 rounded-2xl border transition-all duration-300 flex-1 relative
@@ -211,7 +213,7 @@ export default function LiveMatch() {
                         {label} {isStriker && <Circle className="w-1.5 h-1.5 fill-brand-500 text-brand-500 animate-pulse" />}
                     </span>
                     <div className="flex gap-2">
-                        {isUmpire && !isEmpty && (
+                        {isUmpire && !isEmpty && hasPlayed && (
                             <button 
                                 onClick={() => handleRetiredHurt(type)} 
                                 className="p-1 px-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-[8px] font-black text-red-500 uppercase tracking-tighter"
@@ -219,7 +221,7 @@ export default function LiveMatch() {
                                 Retire
                             </button>
                         )}
-                        {isUmpire && (
+                        {isUmpire && !hasPlayed && (
                             <button 
                                 onClick={() => setForcingChange(type)} 
                                 className="p-1 px-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-[8px] font-black text-slate-400 uppercase tracking-tighter"
@@ -511,12 +513,21 @@ export default function LiveMatch() {
                                             <div className="flex items-center gap-2">
                                                 <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Active Bowler</span>
                                                 {isUmpire && currentBowlerId && (
-                                                    <button 
-                                                        onClick={() => setForcingChange('bowler')}
-                                                        className="p-1 px-2 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg text-[7px] font-black text-indigo-400 uppercase"
-                                                    >
-                                                        Swap Mid-Over
-                                                    </button>
+                                                    (stats?.bowler?.overs === '0.0') ? (
+                                                        <button 
+                                                            onClick={() => setForcingChange('bowler')}
+                                                            className="p-1 px-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-[7px] font-black text-slate-400 uppercase"
+                                                        >
+                                                            Change
+                                                        </button>
+                                                    ) : (
+                                                        <button 
+                                                            onClick={() => setForcingChange('bowler')}
+                                                            className="p-1 px-2 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg text-[7px] font-black text-indigo-400 uppercase"
+                                                        >
+                                                            Swap Mid-Over
+                                                        </button>
+                                                    )
                                                 )}
                                             </div>
                                             <span className="text-sm font-black text-white uppercase truncate max-w-[120px]">{currentBowlerId ? (currentRosterA.concat(currentRosterB).find(r => r.id === currentBowlerId)?.name) : "Waiting..."}</span>
@@ -573,6 +584,21 @@ export default function LiveMatch() {
                                                         <span className="text-[9px] font-black text-slate-600 italic mt-0.5">b {b.bowledBy}</span>
                                                     </div>
                                                 ))}
+                                                {inn.stats?.retiredBatters?.map((b, bidx) => (
+                                                    <div key={'retired-' + bidx} className="flex flex-col p-2 bg-yellow-500/5 border border-yellow-500/10 rounded-xl">
+                                                        <div className="flex justify-between">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs font-black text-white uppercase">{b.name}</span>
+                                                                <span className="text-[7px] font-black bg-yellow-500 text-black px-1 rounded uppercase">Retired</span>
+                                                            </div>
+                                                            <div className="flex gap-4 font-black">
+                                                                <span className="w-4 text-center">{b.runs}</span>
+                                                                <span className="w-4 text-center opacity-40">{b.balls}</span>
+                                                            </div>
+                                                        </div>
+                                                        <span className="text-[9px] font-black text-slate-600 italic mt-0.5">Not Out (Retired)</span>
+                                                    </div>
+                                                ))}
                                                 {[inn.stats?.striker, inn.stats?.nonStriker].filter(Boolean).map((b, bidx) => (
                                                     <div key={'active-' + bidx} className="flex flex-col p-2 bg-brand-500/5 border border-brand-500/10 rounded-xl">
                                                         <div className="flex justify-between">
@@ -592,13 +618,39 @@ export default function LiveMatch() {
                                                     <div className="flex gap-4"><span>O</span><span>R</span><span>W</span></div>
                                                 </div>
                                                 {inn.stats?.allBowlers?.map((b, bidx) => (
-                                                    <div key={bidx} className="flex justify-between p-2 hover:bg-white/5 rounded-xl transition-colors">
-                                                        <span className="text-xs font-black text-white uppercase">{b.name}</span>
-                                                        <div className="flex gap-4 font-black text-xs">
-                                                            <span className="w-6 text-center tabular-nums">{b.overs}</span>
-                                                            <span className="w-6 text-center tabular-nums opacity-60">{b.runs}</span>
-                                                            <span className="w-6 text-center tabular-nums text-indigo-400">{b.wickets}</span>
-                                                        </div>
+                                                    <div key={bidx} className="flex flex-col bg-black/20 rounded-xl overflow-hidden border border-white/5">
+                                                        <button 
+                                                            onClick={() => setExpandedBowlerId(expandedBowlerId === b.id ? null : b.id)}
+                                                            className="flex justify-between p-3 active:bg-white/5 transition-colors"
+                                                        >
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs font-black text-white uppercase">{b.name}</span>
+                                                                <ChevronDown className={`w-3 h-3 text-slate-600 transition-transform ${expandedBowlerId === b.id ? 'rotate-180' : ''}`} />
+                                                            </div>
+                                                            <div className="flex gap-4 font-black tabular-nums text-xs">
+                                                                <span className="w-6 text-center text-brand-400">{b.overs}</span>
+                                                                <span className="w-6 text-center tabular-nums opacity-60">{b.runs}</span>
+                                                                <span className="w-6 text-center text-indigo-400">{b.wickets}</span>
+                                                            </div>
+                                                        </button>
+                                                        {expandedBowlerId === b.id && (
+                                                            <div className="px-3 pb-3 space-y-2 animate-slide-up">
+                                                                <div className="h-[1px] bg-white/5 mb-2" />
+                                                                {b.overHistory?.map((over, oidx) => (
+                                                                    <div key={oidx} className="flex items-center justify-between">
+                                                                        <span className="text-[8px] font-black text-slate-500 uppercase">Over {over.overNumber}</span>
+                                                                        <div className="flex gap-1 overflow-x-auto scrollbar-none">
+                                                                            {over.balls.split(' ').map((ball, ballIdx) => (
+                                                                                <span key={ballIdx} className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-black flex-none
+                                                                                    ${ball === 'W' ? 'bg-red-500 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                                                                                    {ball}
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>

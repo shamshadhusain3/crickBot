@@ -92,6 +92,13 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
     const outPlayerIds = Array.from(new Set(deliveries.filter(d => d.wicketType !== 'none').map(d => d.batterId).filter(id => id !== null) as string[]));
     const outBatters = outPlayerIds.map(pid => getBatterStats(pid));
 
+    const playedBattersWithDeliveries = Array.from(new Set(deliveries.map(d => d.batterId).filter(id => id !== null) as string[]));
+    const activeIds = [strikerId, nonStrikerId].filter(id => id !== null);
+    const retiredPlayerIds = playedBattersWithDeliveries.filter(pid => 
+        !activeIds.includes(pid) && !outPlayerIds.includes(pid)
+    );
+    const retiredBatters = retiredPlayerIds.map(pid => getBatterStats(pid));
+
     const lastDelivery = await prisma.delivery.findFirst({
         where: { inningId },
         orderBy: { createdAt: 'desc' }
@@ -102,6 +109,7 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
         nonStriker: nonStrikerId ? getBatterStats(nonStrikerId) : null,
         bowler: activeBowlerId ? getAllBowlersStats().find(b => b.id === activeBowlerId) : null,
         outBatters,
+        retiredBatters,
         allBowlers: getAllBowlersStats(),
         lastBowlerId: lastDelivery?.bowlerId || null
     };
