@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { Camera, Settings, Circle, Wifi, WifiOff, UserPlus, Repeat, UserCheck, ShieldAlert, ChevronDown, ChevronUp, Eye, EyeOff, BarChart3, History, PlayCircle, LogOut, XCircle, CheckCircle2, Share2, Lock, Unlock, Clipboard, ArrowLeftRight, Trophy, ChevronLeft, Calendar } from 'lucide-react'
+import { Camera, Settings, Circle, Wifi, WifiOff, UserPlus, Repeat, UserCheck, ShieldAlert, ChevronDown, ChevronUp, Eye, EyeOff, BarChart3, History, PlayCircle, LogOut, XCircle, CheckCircle2, Share2, Lock, Unlock, Clipboard, ArrowLeftRight, Trophy, ChevronLeft, Calendar, Star } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 import { useMatchStore } from '../store/useMatchStore'
 import { matchService } from '../services/matchService'
@@ -71,7 +71,12 @@ export default function LiveMatch() {
             setBallsThisOver(legalBalls % 6)
 
             if (initialData.status === 'completed') {
-                setOverlayMessage({ title: "Match Over!", subtitle: `Final Result: ${initialData.winningTeam} won.`, type: 'final' })
+                setOverlayMessage({ 
+                    title: "Match Over!", 
+                    winningTeam: initialData.winningTeam,
+                    reason: initialData.reason,
+                    type: 'final' 
+                })
             } else if (lastInning.status === 'completed' && initialData.innings.length === 1) {
                 setOverlayMessage({ title: "Inning Break", subtitle: `First inning over. Target for ${initialData.innings[0].battingTeam === (initialData.teamA) ? initialData.teamB : initialData.teamA} is ${initialData.target} runs.`, type: 'break' })
             }
@@ -103,7 +108,7 @@ export default function LiveMatch() {
             setNonStrikerId(matchData.nonStrikerId || null)
             setCurrentBowlerId(matchData.currentBowlerId || null)
             setStats(matchData.stats)
-            
+
             if (matchData.innings) {
                 setMatchDataFull(prev => ({ ...prev, innings: matchData.innings }))
             }
@@ -111,9 +116,14 @@ export default function LiveMatch() {
             if (matchData.event === 'inning-break') {
                 setTarget(matchData.target);
                 setOverlayMessage({ title: "Inning Break", subtitle: `Target for ${matchData.newBattingTeam} is ${matchData.target} runs.`, type: 'break' })
-                refetch() 
+                refetch()
             } else if (matchData.event === 'match-completed') {
-                setOverlayMessage({ title: "Match Over!", subtitle: `${matchData.winningTeam} won. ${matchData.reason}`, type: 'final' })
+                setOverlayMessage({ 
+                    title: "Match Over!", 
+                    winningTeam: matchData.winningTeam,
+                    reason: matchData.reason,
+                    type: 'final' 
+                })
             }
         }
     }, [matchData])
@@ -204,7 +214,7 @@ export default function LiveMatch() {
         const pStats = stats?.[type]
         const isEmpty = !player
         const hasPlayed = (pStats?.balls || 0) > 0
-        
+
         return (
             <div className={`p-4 rounded-2xl border transition-all duration-300 flex-1 relative
             ${isStriker ? 'bg-brand-500/10 border-brand-500/30' : 'bg-white/5 border-white/5 opacity-70'}`}>
@@ -214,16 +224,16 @@ export default function LiveMatch() {
                     </span>
                     <div className="flex gap-2">
                         {isUmpire && !isEmpty && hasPlayed && (
-                            <button 
-                                onClick={() => handleRetiredHurt(type)} 
+                            <button
+                                onClick={() => handleRetiredHurt(type)}
                                 className="p-1 px-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-[8px] font-black text-red-500 uppercase tracking-tighter"
                             >
                                 Retire
                             </button>
                         )}
                         {isUmpire && !hasPlayed && (
-                            <button 
-                                onClick={() => setForcingChange(type)} 
+                            <button
+                                onClick={() => setForcingChange(type)}
                                 className="p-1 px-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-[8px] font-black text-slate-400 uppercase tracking-tighter"
                             >
                                 Change
@@ -286,18 +296,48 @@ export default function LiveMatch() {
 
             {overlayMessage && (
                 <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center p-8 text-center animate-fade-in">
-                    <div className="w-20 h-20 rounded-[2rem] bg-brand-500/20 flex items-center justify-center mb-8 ring-4 ring-brand-500/10">
-                        {overlayMessage.type === 'break' ? <PlayCircle className="w-10 h-10 text-brand-500 animate-pulse" /> : <Trophy className="w-10 h-10 text-brand-500" />}
+                    <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-20">
+                        <div className="absolute -top-1/4 -left-1/4 w-1/2 h-1/2 bg-brand-500 blur-[120px] rounded-full animate-pulse" />
+                        <div className="absolute -bottom-1/4 -right-1/4 w-1/2 h-1/2 bg-indigo-500 blur-[120px] rounded-full animate-pulse delay-700" />
                     </div>
-                    <h2 className="text-4xl font-black text-white tracking-widest mb-4 uppercase">{overlayMessage.title}</h2>
-                    <p className="text-lg text-brand-400 font-bold mb-12 uppercase max-w-xs">{overlayMessage.subtitle}</p>
-                    <div className="w-full space-y-3">
-                        {overlayMessage.type === 'break' && isUmpire && (
-                            <button onClick={resumeNextInning} className="bg-brand-500 text-white px-10 py-5 rounded-3xl font-black text-lg w-full active:scale-95 transition-all shadow-xl shadow-brand-500/20 flex items-center justify-center gap-3">
-                                <PlayCircle className="w-6 h-6" /> START 2ND INNING
-                            </button>
-                        )}
-                        <button onClick={() => setShowExitConfirm(true)} className="bg-slate-800 text-slate-400 px-10 py-5 rounded-3xl font-black text-lg w-full active:scale-95 transition-all border border-slate-700 uppercase">{isUmpire ? 'End Session' : 'Back to Lobby'}</button>
+
+                    <div className="w-20 h-20 rounded-[2rem] bg-brand-500/20 flex items-center justify-center mb-6 ring-4 ring-brand-500/10 shadow-[0_0_40px_rgba(251,191,36,0.1)] relative z-10">
+                        <Trophy className="w-10 h-10 text-brand-500" />
+                    </div>
+
+                    <h2 className="text-5xl font-black text-white tracking-tighter mb-4 uppercase relative z-10">MATCH OVER!</h2>
+                    <div className="bg-white/5 border border-white/10 rounded-2xl px-6 py-3 mb-10 relative z-10 transition-all hover:bg-white/10">
+                        <p className="text-lg text-brand-400 font-bold uppercase tracking-tight">
+                            {overlayMessage.winningTeam} <span className="text-slate-500 font-black">Won By</span> {overlayMessage.reason}
+                        </p>
+                    </div>
+
+                    {stats?.potm && (
+                        <div className="w-full max-w-sm bg-gradient-to-b from-yellow-500/20 to-transparent border border-yellow-500/30 rounded-[2.5rem] p-8 mb-12 animate-slide-up relative overflow-hidden group shadow-2xl shadow-yellow-500/10 z-10">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-yellow-500 to-transparent" />
+                            <Star className="w-6 h-6 text-yellow-500 mx-auto mb-4 animate-spin-slow" />
+                            <span className="text-[10px] font-black text-yellow-500 uppercase tracking-[0.3em] block mb-2 opacity-70">Player of the Match</span>
+                            <h4 className="text-3xl font-black text-white uppercase tracking-tighter mb-1">{stats.potm.name}</h4>
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-4 italic">{stats.potm.teamName}</p>
+                            <div className="inline-flex items-center gap-2 bg-yellow-500/10 px-4 py-1.5 rounded-full border border-yellow-500/20">
+                                <span className="text-xs font-black text-yellow-400 uppercase tracking-tight">{stats.potm.summary}</span>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="w-full max-w-xs space-y-4 relative z-10">
+                        <button
+                            onClick={() => { setOverlayMessage(null); setActiveTab('scorecard'); }}
+                            className="bg-indigo-600 text-white px-10 py-5 rounded-[2rem] font-black text-sm w-full active:scale-95 transition-all shadow-xl shadow-indigo-600/20 uppercase tracking-widest border-b-4 border-indigo-900"
+                        >
+                            View Full Scorecard
+                        </button>
+                        <button
+                            onClick={() => navigate('/')}
+                            className="bg-slate-800 text-slate-400 px-10 py-5 rounded-[2rem] font-black text-sm w-full active:scale-95 transition-all border border-slate-700 uppercase tracking-widest"
+                        >
+                            Back to Lobby
+                        </button>
                     </div>
                 </div>
             )}
@@ -318,7 +358,7 @@ export default function LiveMatch() {
 
             {/* SELECTION OVERLAY */}
             {isSelectionRequired && (
-                 <div className="absolute inset-x-0 bottom-0 z-50 bg-slate-900 border-t border-white/10 rounded-t-[2.5rem] p-6 animate-slide-up shadow-[0_-20px_50px_rgba(0,0,0,0.8)] pb-12">
+                <div className="absolute inset-x-0 bottom-0 z-50 bg-slate-900 border-t border-white/10 rounded-t-[2.5rem] p-6 animate-slide-up shadow-[0_-20px_50px_rgba(0,0,0,0.8)] pb-12">
                     <div className="flex justify-between items-center mb-6">
                         <div className="w-10 h-1 bg-slate-700 rounded-full" />
                         <XCircle className="w-6 h-6 text-slate-600 cursor-pointer" onClick={() => setForcingChange(null)} />
@@ -390,14 +430,14 @@ export default function LiveMatch() {
                 {activeTab === 'live' ? (
                     <>
                         <div className="flex justify-between items-center px-1 mb-1">
-                             <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-800/50 rounded-full border border-white/5">
-                                 <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-                                 <span className="text-[9px] font-black text-white uppercase tracking-widest">Inning {matchDataFull?.innings?.length || 1}</span>
-                             </div>
-                             <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-800/50 rounded-full border border-white/5">
-                                 <Calendar className="w-3 h-3 text-brand-400" />
-                                 <span className="text-[9px] font-black text-white uppercase tracking-widest">Overs: {initialData?.overs || '0'}</span>
-                             </div>
+                            <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-800/50 rounded-full border border-white/5">
+                                <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                                <span className="text-[9px] font-black text-white uppercase tracking-widest">Inning {matchDataFull?.innings?.length || 1}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-800/50 rounded-full border border-white/5">
+                                <Calendar className="w-3 h-3 text-brand-400" />
+                                <span className="text-[9px] font-black text-white uppercase tracking-widest">Overs: {initialData?.overs || '0'}</span>
+                            </div>
                         </div>
 
                         <div className="py-2 flex gap-3">
@@ -514,14 +554,14 @@ export default function LiveMatch() {
                                                 <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Active Bowler</span>
                                                 {isUmpire && currentBowlerId && (
                                                     (stats?.bowler?.overs === '0.0') ? (
-                                                        <button 
+                                                        <button
                                                             onClick={() => setForcingChange('bowler')}
                                                             className="p-1 px-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-[7px] font-black text-slate-400 uppercase"
                                                         >
                                                             Change
                                                         </button>
                                                     ) : (
-                                                        <button 
+                                                        <button
                                                             onClick={() => setForcingChange('bowler')}
                                                             className="p-1 px-2 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg text-[7px] font-black text-indigo-400 uppercase"
                                                         >
@@ -548,7 +588,7 @@ export default function LiveMatch() {
                             const isExpanded = expandedInnings.includes(idx)
                             return (
                                 <div key={idx} className="bg-slate-900/50 border border-white/5 rounded-[2.5rem] overflow-hidden transition-all duration-300">
-                                    <button 
+                                    <button
                                         onClick={() => toggleInningExpansion(idx)}
                                         className="w-full bg-slate-800 p-5 flex justify-between items-center active:bg-slate-700 transition-colors"
                                     >
@@ -570,15 +610,16 @@ export default function LiveMatch() {
                                             <div className="grid grid-cols-1 gap-2">
                                                 <div className="flex justify-between px-2 text-[9px] font-black text-slate-600 uppercase tracking-widest border-b border-white/5 pb-2">
                                                     <span>Batter</span>
-                                                    <div className="flex gap-4"><span>R</span><span>B</span></div>
+                                                    <div className="flex gap-4"><span className="w-6 text-center">R</span><span className="w-6 text-center">B</span><span className="w-8 text-right pr-1">SR</span></div>
                                                 </div>
                                                 {inn.stats?.outBatters?.map((b, bidx) => (
                                                     <div key={bidx} className="flex flex-col p-2 bg-black/20 rounded-xl">
                                                         <div className="flex justify-between">
                                                             <span className="text-xs font-black text-white uppercase">{b.name}</span>
                                                             <div className="flex gap-4 font-black">
-                                                                <span className="w-4 text-center">{b.runs}</span>
-                                                                <span className="w-4 text-center opacity-40">{b.balls}</span>
+                                                                <span className="w-6 text-center">{b.runs}</span>
+                                                                <span className="w-6 text-center opacity-40">{b.balls}</span>
+                                                                <span className="w-8 text-right text-brand-400 text-[10px] pr-1">{b.sr}</span>
                                                             </div>
                                                         </div>
                                                         <span className="text-[9px] font-black text-slate-600 italic mt-0.5">b {b.bowledBy}</span>
@@ -592,8 +633,9 @@ export default function LiveMatch() {
                                                                 <span className="text-[7px] font-black bg-yellow-500 text-black px-1 rounded uppercase">Retired</span>
                                                             </div>
                                                             <div className="flex gap-4 font-black">
-                                                                <span className="w-4 text-center">{b.runs}</span>
-                                                                <span className="w-4 text-center opacity-40">{b.balls}</span>
+                                                                <span className="w-6 text-center">{b.runs}</span>
+                                                                <span className="w-6 text-center opacity-40">{b.balls}</span>
+                                                                <span className="w-8 text-right text-brand-400 text-[10px] pr-1">{b.sr}</span>
                                                             </div>
                                                         </div>
                                                         <span className="text-[9px] font-black text-slate-600 italic mt-0.5">Not Out (Retired)</span>
@@ -604,8 +646,9 @@ export default function LiveMatch() {
                                                         <div className="flex justify-between">
                                                             <span className="text-xs font-black text-brand-400 uppercase">{b.name}*</span>
                                                             <div className="flex gap-4 font-black">
-                                                                <span className="w-4 text-center">{b.runs}</span>
-                                                                <span className="w-4 text-center opacity-40">{b.balls}</span>
+                                                                <span className="w-6 text-center">{b.runs}</span>
+                                                                <span className="w-6 text-center opacity-40">{b.balls}</span>
+                                                                <span className="w-8 text-right text-brand-400 text-[10px] pr-1">{b.sr}</span>
                                                             </div>
                                                         </div>
                                                         <span className="text-[9px] font-black text-brand-500/50 uppercase tracking-tighter mt-0.5">Not Out</span>
@@ -619,7 +662,7 @@ export default function LiveMatch() {
                                                 </div>
                                                 {inn.stats?.allBowlers?.map((b, bidx) => (
                                                     <div key={bidx} className="flex flex-col bg-black/20 rounded-xl overflow-hidden border border-white/5">
-                                                        <button 
+                                                        <button
                                                             onClick={() => setExpandedBowlerId(expandedBowlerId === b.id ? null : b.id)}
                                                             className="flex justify-between p-3 active:bg-white/5 transition-colors"
                                                         >
@@ -663,7 +706,7 @@ export default function LiveMatch() {
                 )}
             </div>
 
-            {isUmpire && activeTab === 'live' && (
+            {isUmpire && activeTab === 'live' && initialData?.status !== 'completed' && (
                 <div className={`p-5 bg-slate-900 border-t border-white/10 rounded-t-[3rem] shadow-[0_-20px_60px_rgba(0,0,0,0.8)] transition-all duration-500 ${(isSelectionRequired || overlayMessage || showExitConfirm) ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
                     <div className="grid grid-cols-4 gap-3 mb-3">
                         <button onClick={() => sendDelivery(0)} disabled={isPending} className="bg-slate-800 h-14 rounded-2xl font-black active:scale-90 transition-all text-xs border-b-4 border-black uppercase">Dot</button>

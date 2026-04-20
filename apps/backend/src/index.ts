@@ -99,6 +99,71 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
     );
     const retiredBatters = retiredPlayerIds.map(pid => getBatterStats(pid));
 
+    // Calculate Man of the Match (POTM) - AGGREGATE ACROSS ALL INNINGS
+    const match = await prisma.match.findFirst({
+        where: { innings: { some: { id: inningId } } },
+        include: { 
+            players: { include: { player: true } },
+            innings: { include: { deliveries: true } }
+        }
+    });
+
+    const allMatchDeliveries = match?.innings.flatMap(inn => inn.deliveries) || [];
+    
+    let bestScore = -1;
+    let potm: any = null;
+
+    const winnerTeamLabel = match?.winningTeam; 
+    const isCompleted = match?.status === 'completed';
+
+    // Involved players in the WHOLE match
+    const matchPlayersMap = match?.players.reduce((acc, mp) => ({ ...acc, [mp.playerId]: mp.player.name }), {} as Record<string, string>) || {};
+    const matchWidePlayerIds = Object.keys(matchPlayersMap);
+
+    matchWidePlayerIds.forEach(pid => {
+        const mPlayer = match?.players.find(mp => mp.playerId === pid);
+        const playerTeamName = mPlayer?.team === 'A' ? match?.teamA : match?.teamB;
+        
+        // POTM only from winning team logic
+        if (isCompleted && winnerTeamLabel && playerTeamName !== winnerTeamLabel) return;
+
+        // Batting Stats across match
+        const bBalls = allMatchDeliveries.filter(d => d.batterId === pid);
+        const runs = bBalls.reduce((acc, d) => acc + d.runs, 0);
+        const ballsFaced = bBalls.length;
+
+        // Bowling Stats across match
+        const bowlBalls = allMatchDeliveries.filter(d => d.bowlerId === pid);
+        const legalBowlBalls = bowlBalls.filter(d => d.extras === 0);
+        const runsConceded = bowlBalls.reduce((acc, d) => acc + d.runs, 0);
+        const wickets = bowlBalls.filter(d => d.wicketType !== 'none').length;
+        const overs = `${Math.floor(legalBowlBalls.length / 6)}.${legalBowlBalls.length % 6}`;
+        
+        const score = (runs * 1.5) + (wickets * 30);
+        
+        if (score > bestScore) {
+            bestScore = score;
+            
+            // Build comprehensive summary as requested
+            let summaryParts = [];
+            if (runs > 0 || ballsFaced > 0) {
+                summaryParts.push(`${runs} runs (${ballsFaced} balls)`);
+            }
+            if (wickets > 0 || overs !== "0.0") {
+                summaryParts.push(`${wickets}/${runsConceded} (${overs} overs)`);
+            }
+
+            potm = {
+                id: pid,
+                name: matchPlayersMap[pid] || "Unknown",
+                teamName: playerTeamName,
+                summary: summaryParts.join(' | ') || "No major contribution"
+            };
+        }
+    });
+
+    const allBowlers = getAllBowlersStats();
+
     const lastDelivery = await prisma.delivery.findFirst({
         where: { inningId },
         orderBy: { createdAt: 'desc' }
@@ -110,7 +175,8 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
         bowler: activeBowlerId ? getAllBowlersStats().find(b => b.id === activeBowlerId) : null,
         outBatters,
         retiredBatters,
-        allBowlers: getAllBowlersStats(),
+        allBowlers,
+        potm,
         lastBowlerId: lastDelivery?.bowlerId || null
     };
 }
@@ -120,9 +186,10 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
 fastify.get('/ping', async () => ({ status: 'ok', brand: 'CrickBot Pro Engine' }))
 
 // List Live Matches (Lobby)
-fastify.get('/api/matches', async () => {
+fastify.get('/api/matches', async (request) => {
+    const { status } = request.query as any
     return prisma.match.findMany({
-        where: { status: 'live' },
+        where: status ? { status } : { status: 'live' },
         include: { innings: true },
         orderBy: { id: 'desc' }
     });

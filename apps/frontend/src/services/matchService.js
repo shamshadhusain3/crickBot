@@ -6,8 +6,8 @@ export const matchService = {
     return await apiClient.post('/matches', payload);
   },
   
-  getMatches: async () => {
-    return await apiClient.get('/matches');
+  getMatches: async (status = 'live') => {
+    return await apiClient.get(`/matches?status=${status}`);
   },
   
   getMatch: async (id) => {
