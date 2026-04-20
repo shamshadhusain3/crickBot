@@ -13,13 +13,19 @@ declare module 'fastify' {
 const prisma = new PrismaClient()
 const fastify = Fastify({ logger: true })
 
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173'
+].filter(Boolean) as string[]
+
 fastify.register(cors, { 
-    origin: '*',
+    origin: allowedOrigins.length ? allowedOrigins : '*',
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 })
 fastify.register(socketioServer, {
   cors: {
-    origin: '*',
+    origin: allowedOrigins.length ? allowedOrigins : '*',
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
   }
 })
@@ -480,7 +486,10 @@ fastify.ready(err => {
 })
 
 const start = async () => {
-    try { await fastify.listen({ port: 3001, host: '0.0.0.0' }) } 
+    try { 
+        const port = parseInt(process.env.PORT || '3001')
+        await fastify.listen({ port, host: '0.0.0.0' }) 
+    } 
     catch (err) { fastify.log.error(err); process.exit(1) }
 }
 start()

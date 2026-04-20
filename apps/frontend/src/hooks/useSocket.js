@@ -10,7 +10,7 @@ export function useSocket(matchId) {
     if (!matchId) return;
 
     // Connect securely
-    const socketInstance = io('http://127.0.0.1:3001');
+    const socketInstance = io(import.meta.env.VITE_SOCKET_URL || 'http://127.0.0.1:3001');
 
     socketInstance.on('connect', () => {
       setIsConnected(true);

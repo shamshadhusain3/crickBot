@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create a centralized Axios client
 const apiClient = axios.create({
-  baseURL: 'http://127.0.0.1:3001/api', // Hardcoded IPv4 to prevent Windows resolver bugs
+  baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:3001/api',
   headers: {
     'Content-Type': 'application/json',
   },
