@@ -438,9 +438,16 @@ fastify.post('/api/matches/:id/deliveries', async (request, reply) => {
       const isChased = updatedInning.totalRuns >= match.target
       const isDefended = (isAllOut || isOversUp) && updatedInning.totalRuns < match.target
       if (isChased || isDefended) {
-          await prisma.match.update({ where: { id }, data: { status: 'completed' }})
+          const winningTeam = isChased ? currentInning.battingTeam : (currentInning.battingTeam === match.teamA ? match.teamB : match.teamA)
+          await prisma.match.update({ 
+              where: { id }, 
+              data: { 
+                  status: 'completed',
+                  winningTeam
+              }
+          })
           responseData.event = 'match-completed'
-          responseData.winningTeam = isChased ? currentInning.battingTeam : (currentInning.battingTeam === match.teamA ? match.teamB : match.teamA)
+          responseData.winningTeam = winningTeam
           responseData.reason = isChased ? `Won by ${10 - updatedInning.totalWickets} wickets.` : `Won by ${match.target - 1 - updatedInning.totalRuns} runs.`
       }
   }

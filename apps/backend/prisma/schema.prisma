@@ -39,6 +39,7 @@ model Match {
   target        Int?
   umpirePin     String?
   bowlerOverLimit Int    @default(0) // 0 means no limit
+  winningTeam   String?
   innings       Inning[]
   players       MatchPlayer[]
 }
