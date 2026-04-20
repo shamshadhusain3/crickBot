@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { Camera, Settings, Circle, Wifi, WifiOff, UserPlus, Repeat, UserCheck, ShieldAlert, ChevronDown, ChevronUp, Eye, EyeOff, BarChart3, History, PlayCircle, LogOut, XCircle, CheckCircle2, Share2, Lock, Unlock, Clipboard, ArrowLeftRight, Trophy, ChevronLeft, Calendar, Star } from 'lucide-react'
+import { Camera, Settings, Circle, Wifi, WifiOff, UserPlus, Repeat, UserCheck, ShieldAlert, ChevronDown, ChevronUp, Eye, EyeOff, BarChart3, History, PlayCircle, LogOut, XCircle, CheckCircle2, Share2, Lock, Unlock, Clipboard, ArrowLeftRight, Trophy, ChevronLeft, Calendar, Star, ArrowRight } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 import { useMatchStore } from '../store/useMatchStore'
 import { matchService } from '../services/matchService'
@@ -71,11 +71,11 @@ export default function LiveMatch() {
             setBallsThisOver(legalBalls % 6)
 
             if (initialData.status === 'completed') {
-                setOverlayMessage({ 
-                    title: "Match Over!", 
+                setOverlayMessage({
+                    title: "Match Over!",
                     winningTeam: initialData.winningTeam,
                     reason: initialData.reason,
-                    type: 'final' 
+                    type: 'final'
                 })
             } else if (lastInning.status === 'completed' && initialData.innings.length === 1) {
                 setOverlayMessage({ title: "Inning Break", subtitle: `First inning over. Target for ${initialData.innings[0].battingTeam === (initialData.teamA) ? initialData.teamB : initialData.teamA} is ${initialData.target} runs.`, type: 'break' })
@@ -118,11 +118,11 @@ export default function LiveMatch() {
                 setOverlayMessage({ title: "Inning Break", subtitle: `Target for ${matchData.newBattingTeam} is ${matchData.target} runs.`, type: 'break' })
                 refetch()
             } else if (matchData.event === 'match-completed') {
-                setOverlayMessage({ 
-                    title: "Match Over!", 
+                setOverlayMessage({
+                    title: "Match Over!",
                     winningTeam: matchData.winningTeam,
                     reason: matchData.reason,
-                    type: 'final' 
+                    type: 'final'
                 })
             }
         }
@@ -223,6 +223,7 @@ export default function LiveMatch() {
                         {label} {isStriker && <Circle className="w-1.5 h-1.5 fill-brand-500 text-brand-500 animate-pulse" />}
                     </span>
                     <div className="flex gap-2">
+                        {pStats?.isCaptain && <span className="p-0.5 px-1 bg-yellow-500 text-black text-[7px] font-black rounded uppercase leading-none">C</span>}
                         {isUmpire && !isEmpty && hasPlayed && (
                             <button
                                 onClick={() => handleRetiredHurt(type)}
@@ -301,44 +302,68 @@ export default function LiveMatch() {
                         <div className="absolute -bottom-1/4 -right-1/4 w-1/2 h-1/2 bg-indigo-500 blur-[120px] rounded-full animate-pulse delay-700" />
                     </div>
 
-                    <div className="w-20 h-20 rounded-[2rem] bg-brand-500/20 flex items-center justify-center mb-6 ring-4 ring-brand-500/10 shadow-[0_0_40px_rgba(251,191,36,0.1)] relative z-10">
-                        <Trophy className="w-10 h-10 text-brand-500" />
-                    </div>
-
-                    <h2 className="text-5xl font-black text-white tracking-tighter mb-4 uppercase relative z-10">MATCH OVER!</h2>
-                    <div className="bg-white/5 border border-white/10 rounded-2xl px-6 py-3 mb-10 relative z-10 transition-all hover:bg-white/10">
-                        <p className="text-lg text-brand-400 font-bold uppercase tracking-tight">
-                            {overlayMessage.winningTeam} <span className="text-slate-500 font-black">Won By</span> {overlayMessage.reason}
-                        </p>
-                    </div>
-
-                    {stats?.potm && (
-                        <div className="w-full max-w-sm bg-gradient-to-b from-yellow-500/20 to-transparent border border-yellow-500/30 rounded-[2.5rem] p-8 mb-12 animate-slide-up relative overflow-hidden group shadow-2xl shadow-yellow-500/10 z-10">
-                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-yellow-500 to-transparent" />
-                            <Star className="w-6 h-6 text-yellow-500 mx-auto mb-4 animate-spin-slow" />
-                            <span className="text-[10px] font-black text-yellow-500 uppercase tracking-[0.3em] block mb-2 opacity-70">Player of the Match</span>
-                            <h4 className="text-3xl font-black text-white uppercase tracking-tighter mb-1">{stats.potm.name}</h4>
-                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-4 italic">{stats.potm.teamName}</p>
-                            <div className="inline-flex items-center gap-2 bg-yellow-500/10 px-4 py-1.5 rounded-full border border-yellow-500/20">
-                                <span className="text-xs font-black text-yellow-400 uppercase tracking-tight">{stats.potm.summary}</span>
+                    {overlayMessage.type === 'break' ? (
+                        <>
+                            <div className="w-20 h-20 rounded-[2rem] bg-indigo-500/20 flex items-center justify-center mb-6 ring-4 ring-indigo-500/10 relative z-10">
+                                <ArrowRight className="w-10 h-10 text-indigo-400" />
                             </div>
-                        </div>
-                    )}
+                            <h2 className="text-4xl font-black text-white tracking-tighter mb-4 uppercase relative z-10">INNING OVER!</h2>
+                            <div className="bg-white/5 border border-white/10 rounded-2xl px-8 py-6 mb-10 relative z-10 max-w-sm">
+                                <p className="text-sm text-slate-500 font-bold uppercase tracking-widest mb-2 italic">The Target is</p>
+                                <p className="text-5xl font-black text-brand-400 tracking-tighter mb-2">{overlayMessage.subtitle.match(/\d+/)[0]}</p>
+                                <p className="text-xs text-slate-400 font-bold uppercase tracking-tight">Needed by {overlayMessage.subtitle.match(/for (.*) is/)?.[1] || 'Team'}</p>
+                            </div>
+                            <div className="w-full max-w-xs relative z-10">
+                                <button
+                                    onClick={resumeNextInning}
+                                    className="bg-brand-500 text-white px-10 py-5 rounded-[2rem] font-black text-sm w-full active:scale-95 transition-all shadow-xl shadow-brand-500/20 uppercase tracking-widest"
+                                >
+                                    Resume Next Inning
+                                </button>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="w-20 h-20 rounded-[2rem] bg-brand-500/20 flex items-center justify-center mb-6 ring-4 ring-brand-500/10 shadow-[0_0_40px_rgba(251,191,36,0.1)] relative z-10">
+                                <Trophy className="w-10 h-10 text-brand-500" />
+                            </div>
 
-                    <div className="w-full max-w-xs space-y-4 relative z-10">
-                        <button
-                            onClick={() => { setOverlayMessage(null); setActiveTab('scorecard'); }}
-                            className="bg-indigo-600 text-white px-10 py-5 rounded-[2rem] font-black text-sm w-full active:scale-95 transition-all shadow-xl shadow-indigo-600/20 uppercase tracking-widest border-b-4 border-indigo-900"
-                        >
-                            View Full Scorecard
-                        </button>
-                        <button
-                            onClick={() => navigate('/')}
-                            className="bg-slate-800 text-slate-400 px-10 py-5 rounded-[2rem] font-black text-sm w-full active:scale-95 transition-all border border-slate-700 uppercase tracking-widest"
-                        >
-                            Back to Lobby
-                        </button>
-                    </div>
+                            <h2 className="text-5xl font-black text-white tracking-tighter mb-4 uppercase relative z-10">MATCH OVER!</h2>
+                            <div className="bg-white/5 border border-white/10 rounded-2xl px-6 py-3 mb-10 relative z-10 transition-all hover:bg-white/10">
+                                <p className="text-lg text-brand-400 font-bold uppercase tracking-tight">
+                                    {overlayMessage.winningTeam} <span className="text-slate-500 font-black">Won By</span> {overlayMessage.reason}
+                                </p>
+                            </div>
+
+                            {stats?.potm && (
+                                <div className="w-full max-w-sm bg-gradient-to-b from-yellow-500/20 to-transparent border border-yellow-500/30 rounded-[2.5rem] p-8 mb-12 animate-slide-up relative overflow-hidden group shadow-2xl shadow-yellow-500/10 z-10">
+                                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-yellow-500 to-transparent" />
+                                    <Star className="w-6 h-6 text-yellow-500 mx-auto mb-4 animate-spin-slow" />
+                                    <span className="text-[10px] font-black text-yellow-500 uppercase tracking-[0.3em] block mb-2 opacity-70">Player of the Match</span>
+                                    <h4 className="text-3xl font-black text-white uppercase tracking-tighter mb-1">{stats.potm.name}</h4>
+                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-4 italic">{stats.potm.teamName}</p>
+                                    <div className="inline-flex items-center gap-2 bg-yellow-500/10 px-4 py-1.5 rounded-full border border-yellow-500/20">
+                                        <span className="text-xs font-black text-yellow-400 uppercase tracking-tight">{stats.potm.summary}</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="w-full max-w-xs space-y-4 relative z-10">
+                                <button
+                                    onClick={() => { setOverlayMessage(null); setActiveTab('scorecard'); }}
+                                    className="bg-indigo-600 text-white px-10 py-5 rounded-[2rem] font-black text-sm w-full active:scale-95 transition-all shadow-xl shadow-indigo-600/20 uppercase tracking-widest border-b-4 border-indigo-900"
+                                >
+                                    View Full Scorecard
+                                </button>
+                                <button
+                                    onClick={() => navigate('/')}
+                                    className="bg-slate-800 text-slate-400 px-10 py-5 rounded-[2rem] font-black text-sm w-full active:scale-95 transition-all border border-slate-700 uppercase tracking-widest"
+                                >
+                                    Back to Lobby
+                                </button>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
 
@@ -389,7 +414,9 @@ export default function LiveMatch() {
                                     className={`p-3 rounded-xl font-black flex flex-col items-center gap-0.5 transition-all text-sm
                                 ${(isActive || isOut || isConsecutive || isLimitReached) ? 'opacity-20 bg-slate-800' : 'bg-slate-800 border border-slate-700 active:bg-brand-500 active:scale-95'}`}
                                 >
-                                    <span className="text-white line-clamp-1 truncate">{p.name}</span>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-white line-clamp-1 truncate">{p.name}{p.isCaptain ? ' (C)' : ''}</span>
+                                    </div>
                                     <span className="text-[8px] text-slate-500 uppercase tracking-widest">
                                         {isOut ? 'OUT' : isConsecutive ? 'JUST BOWLED' : isLimitReached ? 'LIMIT REACHED' : (isActive ? 'ON FIELD' : 'SELECT')}
                                     </span>

@@ -8,7 +8,9 @@ export default function AdminVault() {
     const navigate = useNavigate()
     const queryClient = useQueryClient()
     const [pin, setPin] = useState('')
-    const [isVerified, setIsVerified] = useState(false)
+    const [isVerified, setIsVerified] = useState(() => {
+        return localStorage.getItem('crick-vault-auth') === 'true'
+    })
     const [error, setError] = useState('')
 
     const { data: matches, isLoading } = useQuery({
@@ -22,7 +24,7 @@ export default function AdminVault() {
     })
 
     const purgeMutation = useMutation({
-        mutationFn: (matchId) => matchService.deleteMatch(matchId, pin),
+        mutationFn: (matchId) => matchService.deleteMatch(matchId, pin || '0011'), // Use verified session or current pin
         onSuccess: () => {
             queryClient.invalidateQueries(['all-matches-vault'])
             alert("Match purged from existence.")
@@ -34,11 +36,19 @@ export default function AdminVault() {
         e.preventDefault()
         if (pin === '0011') {
             setIsVerified(true)
+            localStorage.setItem('crick-vault-auth', 'true')
             setError('')
         } else {
             setError('ACCESS DENIED: INVALID MASTER PIN')
             setPin('')
         }
+    }
+
+    const handleLogout = () => {
+        setIsVerified(false)
+        localStorage.removeItem('crick-vault-auth')
+        setPin('')
+        navigate('/')
     }
 
     if (!isVerified) {
@@ -90,7 +100,9 @@ export default function AdminVault() {
                         <span className="text-[8px] font-black text-green-500 uppercase tracking-widest">Admin Authorized</span>
                     </div>
                 </div>
-                <div className="w-10" />
+                <button onClick={handleLogout} className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center text-red-500 border border-red-500/10 active:scale-90 transition-all shadow-lg shadow-red-500/5">
+                    <Lock className="w-5 h-5" />
+                </button>
             </div>
 
             <div className="space-y-4">

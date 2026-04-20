@@ -15,8 +15,8 @@ const schema = z.object({
   includeExtras: z.boolean(),
   umpirePin: z.string().regex(/^\d{4}$/, "PIN must be exactly 4 digits"),
   bowlerOverLimit: z.number().min(0).max(50),
-  rosterA: z.array(z.object({ name: z.string() })).optional(),
-  rosterB: z.array(z.object({ name: z.string() })).optional(),
+  rosterA: z.array(z.object({ name: z.string(), isCaptain: z.boolean().optional() })).optional(),
+  rosterB: z.array(z.object({ name: z.string(), isCaptain: z.boolean().optional() })).optional(),
 }).superRefine((data, ctx) => {
   if (data.mode === 'pro') {
     if (!data.rosterA || data.rosterA.length === 0 || data.rosterA.some(p => !p.name)) {
@@ -141,14 +141,21 @@ export default function MatchSetup() {
                                type="radio" 
                                name="captainA"
                                defaultChecked={index === 0}
-                               onChange={() => setValue(`rosterA.${index}.isCaptain`, true)}
-                               className="w-4 h-4 text-indigo-500 bg-slate-800 border-slate-700"
+                               onChange={() => {
+                                   fieldsA.forEach((_, i) => setValue(`rosterA.${i}.isCaptain`, i === index));
+                               }}
+                               className="w-4 h-4 accent-indigo-500 bg-slate-800 border-slate-700 cursor-pointer"
                            />
-                           <input 
-                              {...register(`rosterA.${index}.name`)} 
-                              placeholder={`Player ${index + 1}`} 
-                              className="bg-slate-800 border border-slate-700 text-sm font-bold text-white px-3 py-2 rounded-lg outline-none flex-1"
-                           />
+                           <div className="flex-1 relative">
+                               <input 
+                                  {...register(`rosterA.${index}.name`)} 
+                                  placeholder={index === 0 ? "Captain Name" : `Player ${index + 1}`} 
+                                  className={`w-full bg-slate-800 border ${watch(`rosterA.${index}.isCaptain`) ? 'border-indigo-500/50 ring-1 ring-indigo-500/20' : 'border-slate-700'} text-sm font-bold text-white px-3 py-2 rounded-lg outline-none transition-all`}
+                               />
+                               {watch(`rosterA.${index}.isCaptain`) && (
+                                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-black text-indigo-400 uppercase tracking-widest bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20">Captain</span>
+                               )}
+                           </div>
                         </div>
                      ))}
                   </div>
@@ -182,14 +189,21 @@ export default function MatchSetup() {
                                type="radio" 
                                name="captainB"
                                defaultChecked={index === 0}
-                               onChange={() => setValue(`rosterB.${index}.isCaptain`, true)}
-                               className="w-4 h-4 text-indigo-500 bg-slate-800 border-slate-700"
+                               onChange={() => {
+                                   fieldsB.forEach((_, i) => setValue(`rosterB.${i}.isCaptain`, i === index));
+                               }}
+                               className="w-4 h-4 accent-indigo-500 bg-slate-800 border-slate-700 cursor-pointer"
                            />
-                           <input 
-                              {...register(`rosterB.${index}.name`)} 
-                              placeholder={`Player ${index + 1}`} 
-                              className="bg-slate-800 border border-slate-700 text-sm font-bold text-white px-3 py-2 rounded-lg outline-none flex-1"
-                           />
+                           <div className="flex-1 relative">
+                               <input 
+                                  {...register(`rosterB.${index}.name`)} 
+                                  placeholder={index === 0 ? "Captain Name" : `Player ${index + 1}`} 
+                                  className={`w-full bg-slate-800 border ${watch(`rosterB.${index}.isCaptain`) ? 'border-indigo-500/50 ring-1 ring-indigo-500/20' : 'border-slate-700'} text-sm font-bold text-white px-3 py-2 rounded-lg outline-none transition-all`}
+                               />
+                               {watch(`rosterB.${index}.isCaptain`) && (
+                                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-black text-indigo-400 uppercase tracking-widest bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20">Captain</span>
+                               )}
+                           </div>
                         </div>
                      ))}
                   </div>
