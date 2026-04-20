@@ -13,11 +13,14 @@ declare module 'fastify' {
 const prisma = new PrismaClient()
 const fastify = Fastify({ logger: true })
 
-fastify.register(cors, { origin: '*' })
+fastify.register(cors, { 
+    origin: '*',
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+})
 fastify.register(socketioServer, {
   cors: {
     origin: '*',
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
   }
 })
 
@@ -185,6 +188,9 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
 
 fastify.get('/ping', async () => ({ status: 'ok', brand: 'CrickBot Pro Engine' }))
 
+// MASTER VAULT PIN (Only for admin purge)
+const MASTER_VAULT_PIN = "0011";
+
 // List Live Matches (Lobby)
 fastify.get('/api/matches', async (request) => {
     const { status } = request.query as any
@@ -194,6 +200,42 @@ fastify.get('/api/matches', async (request) => {
         orderBy: { id: 'desc' }
     });
 })
+
+// Delete Match (Admin Vault)
+fastify.delete('/api/matches/:id', async (request, reply) => {
+    const { id } = request.params as any;
+    const { vaultPin } = request.body as any;
+
+    if (vaultPin?.toString() !== MASTER_VAULT_PIN) {
+        return reply.status(403).send({ error: "Unauthorized access to vault" });
+    }
+
+    try {
+        // Manual Cascade for SQLite compatibility
+        await prisma.$transaction(async (tx) => {
+            // 1. Get all innings for this match
+            const innings = await tx.inning.findMany({ where: { matchId: id } });
+            const inningIds = innings.map(i => i.id);
+
+            // 2. Delete all deliveries in those innings
+            await tx.delivery.deleteMany({ where: { inningId: { in: inningIds } } });
+
+            // 3. Delete all innings
+            await tx.inning.deleteMany({ where: { matchId: id } });
+
+            // 4. Delete all match players
+            await tx.matchPlayer.deleteMany({ where: { matchId: id } });
+
+            // 5. Delete the match itself
+            await tx.match.delete({ where: { id } });
+        });
+
+        return { status: 'purged', id };
+    } catch (err) {
+        console.error("Purge Error:", err);
+        return reply.status(500).send({ error: "Failed to purge match" });
+    }
+});
 
 // Create Match
 fastify.post('/api/matches', async (request) => {

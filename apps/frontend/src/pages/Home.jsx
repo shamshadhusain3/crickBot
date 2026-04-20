@@ -10,6 +10,7 @@ export default function Home() {
     const { myMatches } = useMatchStore()
 
     const [activeTab, setActiveTab] = useState('live') // 'live', 'completed'
+    const [vaultClicks, setVaultClicks] = useState(0)
 
     const { data: matches, isLoading } = useQuery({
         queryKey: ['matches', activeTab],
@@ -117,7 +118,20 @@ export default function Home() {
                 <div className="inline-flex p-3 rounded-3xl bg-brand-500/10 mb-4 ring-1 ring-brand-500/20">
                     <Trophy className="w-8 h-8 text-brand-500" />
                 </div>
-                <h1 className="text-5xl font-black text-white tracking-tighter leading-none mb-2">CrickBot<span className="text-brand-500">PRO</span></h1>
+                <h1 
+                    onClick={() => {
+                        const newCount = vaultClicks + 1;
+                        if (newCount >= 5) {
+                            navigate('/admin-vault');
+                            setVaultClicks(0);
+                        } else {
+                            setVaultClicks(newCount);
+                        }
+                    }}
+                    className="text-5xl font-black text-white tracking-tighter leading-none mb-2 select-none cursor-default"
+                >
+                    CrickBot<span className="text-brand-500">PRO</span>
+                </h1>
                 <p className="text-slate-400 font-bold uppercase tracking-[0.3em] text-[10px]">Professional Analytics Platform</p>
             </div>
 

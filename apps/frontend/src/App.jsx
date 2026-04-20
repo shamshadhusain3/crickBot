@@ -4,6 +4,7 @@ import Home from './pages/Home'
 import MatchSetup from './pages/MatchSetup'
 import Toss from './pages/Toss'
 import LiveMatch from './pages/LiveMatch'
+import AdminVault from './pages/AdminVault'
 
 const queryClient = new QueryClient()
 
@@ -18,6 +19,7 @@ function App() {
             <Route path="/toss" element={<Toss />} />
             <Route path="/live" element={<LiveMatch />} />
             <Route path="/match/:matchId" element={<LiveMatch />} />
+            <Route path="/admin-vault" element={<AdminVault />} />
           </Routes>
         </div>
       </Router>

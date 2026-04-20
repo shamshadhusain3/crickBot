@@ -22,5 +22,9 @@ export const matchService = {
   updateActivePlayers: async (matchId, payload) => {
     // API Expects: { strikerId, nonStrikerId, currentBowlerId, pin }
     return await apiClient.post(`/matches/${matchId}/innings/players`, payload);
+  },
+  
+  deleteMatch: async (matchId, vaultPin) => {
+    return await apiClient.delete(`/matches/${matchId}`, { data: { vaultPin } });
   }
 };
