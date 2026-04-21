@@ -16,7 +16,8 @@ const fastify = Fastify({ logger: true })
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   'http://localhost:5173',
-  'http://127.0.0.1:5173'
+  'http://127.0.0.1:5173',
+  'https://crickbot.netlify.app'
 ].filter(Boolean) as string[]
 
 fastify.register(cors, { 
