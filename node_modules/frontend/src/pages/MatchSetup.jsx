@@ -33,7 +33,7 @@ export default function MatchSetup() {
   const { register, control, handleSubmit, setValue, watch, formState: { errors, isValid } } = useForm({
     resolver: zodResolver(schema),
     defaultValues: {
-      mode: 'quick',
+      mode: 'pro',
       teamA: '',
       teamB: '',
       overs: 5,
