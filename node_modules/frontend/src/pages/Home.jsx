@@ -14,9 +14,21 @@ export default function Home() {
     const [vaultClicks, setVaultClicks] = useState(0)
     const [deferredPrompt, setDeferredPrompt] = useState(null)
     const [showInstallBanner, setShowInstallBanner] = useState(true)
+    const [isIOS, setIsIOS] = useState(false)
+    const [isStandalone, setIsStandalone] = useState(false)
+
 
     // --- PWA INSTALL LOGIC ---
     useEffect(() => {
+        // Check if already installed
+        const isStandaloneMatch = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone
+        setIsStandalone(isStandaloneMatch)
+
+        // Check if iOS
+        const userAgent = window.navigator.userAgent.toLowerCase()
+        const ios = /iphone|ipad|ipod/.test(userAgent)
+        setIsIOS(ios)
+
         const handler = (e) => {
             e.preventDefault()
             setDeferredPrompt(e)
@@ -24,6 +36,7 @@ export default function Home() {
         window.addEventListener('beforeinstallprompt', handler)
         return () => window.removeEventListener('beforeinstallprompt', handler)
     }, [])
+
 
     const handleInstallClick = async () => {
         if (!deferredPrompt) return
@@ -134,8 +147,8 @@ export default function Home() {
     return (
         <div className="p-6 pb-40 max-w-lg mx-auto min-h-screen bg-slate-950 flex flex-col pt-8 relative z-10 w-full animate-fade-in">
 
-            {/* PWA INSTALL BANNER */}
-            {deferredPrompt && showInstallBanner && (
+            {/* PWA INSTALL BANNER (Android/Chrome) */}
+            {deferredPrompt && showInstallBanner && !isStandalone && (
                 <div className="mb-6 bg-gradient-to-r from-indigo-600 to-indigo-500 p-4 rounded-[2rem] flex items-center justify-between shadow-xl shadow-indigo-500/20 border border-white/10 animate-slide-up relative overflow-hidden group">
                     <div className="absolute inset-0 bg-white/10 opacity-0 group-active:opacity-100 transition-opacity" />
                     <div className="flex items-center gap-3 relative z-10">
@@ -163,6 +176,25 @@ export default function Home() {
                     </div>
                 </div>
             )}
+
+            {/* PWA INSTALL BANNER (iOS/Safari) */}
+            {isIOS && showInstallBanner && !isStandalone && !deferredPrompt && (
+                <div className="mb-6 bg-indigo-600/20 p-5 rounded-[2rem] border border-indigo-500/30 animate-slide-up">
+                    <div className="flex items-start gap-4">
+                        <div className="w-10 h-10 bg-indigo-500 rounded-2xl flex items-center justify-center flex-none">
+                            <Smartphone className="w-5 h-5 text-white" />
+                        </div>
+                        <div className="flex-1">
+                            <p className="text-xs font-black text-white uppercase tracking-tight mb-1">Install on iPhone</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase leading-relaxed">
+                                Tap <Share2 className="w-3 h-3 inline text-brand-500 mx-0.5" /> then <span className="text-white">"Add to Home Screen"</span> for the full pro experience.
+                            </p>
+                        </div>
+                        <button onClick={() => setShowInstallBanner(false)} className="text-slate-600"><XCircle className="w-5 h-5" /></button>
+                    </div>
+                </div>
+            )}
+
 
 
             {/* Header Panel */}
