@@ -40,6 +40,7 @@ model Match {
   umpirePin     String?
   bowlerOverLimit Int    @default(0) // 0 means no limit
   winningTeam   String?
+  createdAt     DateTime @default(now())
   innings       Inning[]
   players       MatchPlayer[]
 }
@@ -61,6 +62,7 @@ model Inning {
   totalRuns    Int      @default(0)
   totalWickets Int      @default(0)
   status       String   @default("active") // active, completed
+  createdAt    DateTime @default(now())
   
   // Professional Field State
   strikerId       String?

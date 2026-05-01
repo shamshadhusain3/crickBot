@@ -48,6 +48,7 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
 
     const getBatterStats = (pid: string) => {
         const balls = deliveries.filter(d => d.batterId === pid);
+        const legalBallsForBatter = balls.filter(d => d.extraType !== 'wide');
         const runs = balls.reduce((acc, d) => acc + d.runs, 0);
         const fours = balls.filter(d => d.runs === 4).length;
         const sixes = balls.filter(d => d.runs === 6).length;
@@ -57,8 +58,8 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
         return { 
             id: pid, 
             name: playersMap[pid] || 'Unknown',
-            runs, balls: balls.length, fours, sixes, 
-            sr: balls.length ? ((runs / balls.length) * 100).toFixed(1) : "0.0",
+            runs, balls: legalBallsForBatter.length, fours, sixes, 
+            sr: legalBallsForBatter.length ? ((runs / legalBallsForBatter.length) * 100).toFixed(1) : "0.0",
             bowledBy 
         };
     }
@@ -114,7 +115,7 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
         where: { innings: { some: { id: inningId } } },
         include: { 
             players: { include: { player: true } },
-            innings: { include: { deliveries: true } }
+            innings: { include: { deliveries: true }, orderBy: { createdAt: 'asc' } }
         }
     });
 
@@ -203,8 +204,8 @@ fastify.get('/api/matches', async (request) => {
     const { status } = request.query as any
     return prisma.match.findMany({
         where: status ? { status } : { status: 'live' },
-        include: { innings: true },
-        orderBy: { id: 'desc' }
+        include: { innings: { orderBy: { createdAt: 'asc' } } },
+        orderBy: { createdAt: 'desc' }
     });
 })
 
@@ -282,7 +283,7 @@ fastify.post('/api/matches/:id/innings/players', async (request, reply) => {
     const { id } = request.params as any
     const { strikerId, nonStrikerId, currentBowlerId, pin } = request.body as any
     
-    const match = await prisma.match.findUnique({ where: { id }, include: { innings: true }})
+    const match = await prisma.match.findUnique({ where: { id }, include: { innings: { orderBy: { createdAt: 'asc' } } }})
     if (!match) return reply.status(404).send({ error: "Match not found" })
     
     if (match.umpirePin && match.umpirePin !== pin?.toString()) {
@@ -323,7 +324,7 @@ fastify.post('/api/matches/:id/deliveries', async (request, reply) => {
   const { id } = request.params as any
   const { run, isExtra, extraType, isWicket, pin } = request.body as any
 
-  const match = await prisma.match.findUnique({ where: { id }, include: { innings: true }})
+  const match = await prisma.match.findUnique({ where: { id }, include: { innings: { orderBy: { createdAt: 'asc' } } }})
   if (!match) return reply.status(404).send({ error: "Match not found" })
 
   if (match.umpirePin && match.umpirePin !== pin?.toString()) {
@@ -391,7 +392,7 @@ fastify.post('/api/matches/:id/deliveries', async (request, reply) => {
   
   const updatedMatch = await prisma.match.findUnique({
     where: { id },
-    include: { innings: true }
+    include: { innings: { orderBy: { createdAt: 'asc' } } }
   })
 
   const inningsWithStats = await Promise.all(updatedMatch!.innings.map(async (inn) => {
@@ -422,24 +423,28 @@ fastify.post('/api/matches/:id/deliveries', async (request, reply) => {
   const isOversUp = totalLegalBalls >= (match.overs * 6)
   const isAllOut = updatedInning.totalWickets >= 10
 
+  // RE-FETCH match for precise logic check (especially for target and inning length)
+  const freshMatch = await prisma.match.findUnique({ where: { id }, include: { innings: { orderBy: { createdAt: 'asc' } } }})
+  if (!freshMatch) return responseData
+
   if (isAllOut || isOversUp) {
       await prisma.inning.update({ where: { id: currentInning.id }, data: { status: 'completed' }})
-      if (match.innings.length === 1) {
+      if (freshMatch.innings.length === 1) {
           const target = updatedInning.totalRuns + 1
           await prisma.match.update({ where: { id }, data: { target } })
-          const team2 = currentInning.battingTeam === match.teamA ? match.teamB : match.teamA
-          await prisma.inning.create({ data: { matchId: match.id, battingTeam: team2 }})
+          const team2 = currentInning.battingTeam === freshMatch.teamA ? freshMatch.teamB : freshMatch.teamA
+          await prisma.inning.create({ data: { matchId: freshMatch.id, battingTeam: team2 }})
           responseData.event = 'inning-break'
           responseData.target = target
           responseData.newBattingTeam = team2
       }
   }
 
-  if (match.innings.length === 2 && match.target) {
-      const isChased = updatedInning.totalRuns >= match.target
-      const isDefended = (isAllOut || isOversUp) && updatedInning.totalRuns < match.target
+  if (freshMatch.innings.length === 2 && freshMatch.target) {
+      const isChased = updatedInning.totalRuns >= freshMatch.target
+      const isDefended = (isAllOut || isOversUp) && updatedInning.totalRuns < freshMatch.target
       if (isChased || isDefended) {
-          const winningTeam = isChased ? currentInning.battingTeam : (currentInning.battingTeam === match.teamA ? match.teamB : match.teamA)
+          const winningTeam = isChased ? currentInning.battingTeam : (currentInning.battingTeam === freshMatch.teamA ? freshMatch.teamB : freshMatch.teamA)
           await prisma.match.update({ 
               where: { id }, 
               data: { 
@@ -449,7 +454,7 @@ fastify.post('/api/matches/:id/deliveries', async (request, reply) => {
           })
           responseData.event = 'match-completed'
           responseData.winningTeam = winningTeam
-          responseData.reason = isChased ? `Won by ${10 - updatedInning.totalWickets} wickets.` : `Won by ${match.target - 1 - updatedInning.totalRuns} runs.`
+          responseData.reason = isChased ? `Won by ${10 - updatedInning.totalWickets} wickets.` : `Won by ${freshMatch.target - 1 - updatedInning.totalRuns} runs.`
       }
   }
 
@@ -462,7 +467,7 @@ fastify.get('/api/matches/:id', async (request) => {
   const match = await prisma.match.findUnique({
     where: { id },
     include: { 
-        innings: { include: { deliveries: true } },
+        innings: { include: { deliveries: true }, orderBy: { createdAt: 'asc' } },
         players: { include: { player: true } }
     }
   })

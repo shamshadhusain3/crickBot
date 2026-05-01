@@ -41,6 +41,8 @@ export default function LiveMatch() {
     const [useAiCamera, setUseAiCamera] = useState(false)
     const [showExitConfirm, setShowExitConfirm] = useState(false)
     const [activeTab, setActiveTab] = useState('live') // 'live', 'scorecard'
+    const [isSelectionDismissed, setIsSelectionDismissed] = useState(false)
+
 
     // Security
     const [umpirePin, setUmpirePin] = useState(state?.autoVerifyPin || '')
@@ -184,13 +186,16 @@ export default function LiveMatch() {
     const [forcingChange, setForcingChange] = useState(null) // 'striker', 'nonStriker', 'bowler'
 
     const isUmpire = role === 'umpire' && isPinVerified
+    const isMatchOver = initialData?.status === 'completed' || overlayMessage?.type === 'final'
     const needsBatters = initialData?.mode === 'pro' && (!strikerId || !nonStrikerId || forcingChange === 'striker' || forcingChange === 'nonStriker')
     const needsBowler = initialData?.mode === 'pro' && !needsBatters && (!currentBowlerId || forcingChange === 'bowler')
-    const isSelectionRequired = isUmpire && (needsBatters || needsBowler)
+    const isSelectionRequired = isUmpire && !isMatchOver && !isSelectionDismissed && (needsBatters || needsBowler)
+
 
     const handleSelectionUpdate = (type, playerId) => {
         handleSelection(type, playerId)
         setForcingChange(null)
+        setIsSelectionDismissed(false)
     }
 
     const handleRetiredHurt = (targetType) => {
@@ -226,7 +231,7 @@ export default function LiveMatch() {
                         {pStats?.isCaptain && <span className="p-0.5 px-1 bg-yellow-500 text-black text-[7px] font-black rounded uppercase leading-none">C</span>}
                         {isUmpire && !isEmpty && hasPlayed && (
                             <button
-                                onClick={() => handleRetiredHurt(type)}
+                                onClick={() => { handleRetiredHurt(type); setIsSelectionDismissed(false); }}
                                 className="p-1 px-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-[8px] font-black text-red-500 uppercase tracking-tighter"
                             >
                                 Retire
@@ -234,7 +239,7 @@ export default function LiveMatch() {
                         )}
                         {isUmpire && !hasPlayed && (
                             <button
-                                onClick={() => setForcingChange(type)}
+                                onClick={() => { setForcingChange(type); setIsSelectionDismissed(false); }}
                                 className="p-1 px-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-[8px] font-black text-slate-400 uppercase tracking-tighter"
                             >
                                 Change
@@ -248,10 +253,15 @@ export default function LiveMatch() {
                     </div>
                 </div>
                 {isEmpty ? (
-                    <div className="text-[10px] font-black text-slate-700 italic uppercase py-2 animate-pulse">Assign Player...</div>
+                    <div 
+                        onClick={() => { if(isUmpire) { setForcingChange(type); setIsSelectionDismissed(false); } }}
+                        className="text-[10px] font-black text-slate-700 italic uppercase py-2 animate-pulse cursor-pointer hover:text-slate-500 transition-colors"
+                    >
+                        Assign Player...
+                    </div>
                 ) : (
                     <>
-                        <div className="text-base font-black truncate text-white uppercase tracking-tighter">{player.name}</div>
+                        <div className="text-base font-black truncate text-white uppercase tracking-tighter">{player?.name || pStats?.name || 'Unknown Player'}</div>
                         <div className="flex justify-between items-end mt-1.5">
                             <div className="flex gap-2">
                                 <span className="text-sm font-black text-white">{pStats?.runs || 0}<span className="text-[10px] text-slate-500 ml-1">({pStats?.balls || 0})</span></span>
@@ -386,7 +396,7 @@ export default function LiveMatch() {
                 <div className="absolute inset-x-0 bottom-0 z-50 bg-slate-900 border-t border-white/10 rounded-t-[2.5rem] p-6 animate-slide-up shadow-[0_-20px_50px_rgba(0,0,0,0.8)] pb-12">
                     <div className="flex justify-between items-center mb-6">
                         <div className="w-10 h-1 bg-slate-700 rounded-full" />
-                        <XCircle className="w-6 h-6 text-slate-600 cursor-pointer" onClick={() => setForcingChange(null)} />
+                        <XCircle className="w-6 h-6 text-slate-600 cursor-pointer hover:text-white transition-colors" onClick={() => setIsSelectionDismissed(true)} />
                     </div>
                     <div className="flex flex-col items-center mb-6">
                         <div className={`p-3 rounded-full mb-3 ${needsBatters ? 'bg-brand-500/20 text-brand-500' : 'bg-indigo-500/20 text-indigo-400'}`}>
@@ -401,7 +411,9 @@ export default function LiveMatch() {
                     </div>
                     <div className="grid grid-cols-2 gap-2 max-h-[35vh] overflow-y-auto pb-6 scrollbar-none">
                         {(needsBowler ? (matchDataFull?.innings[matchDataFull.innings.length - 1]?.battingTeam === initialData?.teamA ? currentRosterB : currentRosterA) : (matchDataFull?.innings[matchDataFull.innings.length - 1]?.battingTeam === initialData?.teamA ? currentRosterA : currentRosterB)).map(p => {
-                            const isActive = (p.id === strikerId || p.id === nonStrikerId || p.id === currentBowlerId)
+                            const isStrikerOrNonStriker = (p.id === strikerId || p.id === nonStrikerId)
+                            const isCurrentBowler = (p.id === currentBowlerId)
+                            const isActiveInCurrentRole = needsBatters ? isStrikerOrNonStriker : isCurrentBowler
                             const isOut = stats?.outBatters?.some(out => out.id === p.id)
                             const isConsecutive = needsBowler && p.id === stats?.lastBowlerId && !forcingChange
                             const bowlerStat = stats?.allBowlers?.find(b => b.id === p.id)
@@ -409,16 +421,16 @@ export default function LiveMatch() {
                             return (
                                 <button
                                     key={p.id}
-                                    disabled={isActive || isOut || isConsecutive || isLimitReached}
+                                    disabled={(needsBatters && isStrikerOrNonStriker) || (needsBowler && (isCurrentBowler || isConsecutive || isLimitReached)) || isOut}
                                     onClick={() => handleSelectionUpdate(needsBatters ? (forcingChange === 'nonStriker' || (forcingChange === null && strikerId) ? 'nonStriker' : 'striker') : 'bowler', p.id)}
                                     className={`p-3 rounded-xl font-black flex flex-col items-center gap-0.5 transition-all text-sm
-                                ${(isActive || isOut || isConsecutive || isLimitReached) ? 'opacity-20 bg-slate-800' : 'bg-slate-800 border border-slate-700 active:bg-brand-500 active:scale-95'}`}
+                                 ${((needsBatters && isStrikerOrNonStriker) || (needsBowler && (isCurrentBowler || isConsecutive || isLimitReached)) || isOut) ? 'opacity-20 bg-slate-800' : 'bg-slate-800 border border-slate-700 active:bg-brand-500 active:scale-95'}`}
                                 >
                                     <div className="flex items-center gap-1.5">
                                         <span className="text-white line-clamp-1 truncate">{p.name}{p.isCaptain ? ' (C)' : ''}</span>
                                     </div>
                                     <span className="text-[8px] text-slate-500 uppercase tracking-widest">
-                                        {isOut ? 'OUT' : isConsecutive ? 'JUST BOWLED' : isLimitReached ? 'LIMIT REACHED' : (isActive ? 'ON FIELD' : 'SELECT')}
+                                        {isOut ? 'OUT' : isConsecutive ? 'JUST BOWLED' : isLimitReached ? 'LIMIT REACHED' : (isActiveInCurrentRole ? 'ON FIELD' : 'SELECT')}
                                     </span>
                                 </button>
                             )
@@ -572,29 +584,37 @@ export default function LiveMatch() {
                                     ))}
                                 </div>
                             )}
-                            {!useAiCamera && <div className="mt-2 text-center">
+                             {!useAiCamera && <div className="mt-2 text-center">
                                 <div className="bg-slate-900 p-4 rounded-2xl border border-white/10 flex items-center justify-between shadow-xl">
                                     <div className="flex items-center gap-3">
                                         <UserCheck className="w-5 h-5 text-brand-500" />
                                         <div className="flex flex-col text-left">
                                             <div className="flex items-center gap-2">
                                                 <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Active Bowler</span>
-                                                {isUmpire && currentBowlerId && (
+                                                {isUmpire && !isMatchOver && currentBowlerId && (
                                                     (stats?.bowler?.overs === '0.0') ? (
                                                         <button
-                                                            onClick={() => setForcingChange('bowler')}
+                                                            onClick={() => { setForcingChange('bowler'); setIsSelectionDismissed(false); }}
                                                             className="p-1 px-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-[7px] font-black text-slate-400 uppercase"
                                                         >
                                                             Change
                                                         </button>
                                                     ) : (
                                                         <button
-                                                            onClick={() => setForcingChange('bowler')}
+                                                            onClick={() => { setForcingChange('bowler'); setIsSelectionDismissed(false); }}
                                                             className="p-1 px-2 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg text-[7px] font-black text-indigo-400 uppercase"
                                                         >
                                                             Swap Mid-Over
                                                         </button>
                                                     )
+                                                )}
+                                                {isUmpire && !isMatchOver && !currentBowlerId && (
+                                                     <button
+                                                        onClick={() => { setIsSelectionDismissed(false); }}
+                                                        className="p-1 px-2 bg-brand-500/10 hover:bg-brand-500/20 rounded-lg text-[7px] font-black text-brand-400 uppercase"
+                                                    >
+                                                        Assign Bowler
+                                                    </button>
                                                 )}
                                             </div>
                                             <span className="text-sm font-black text-white uppercase truncate max-w-[120px]">{currentBowlerId ? (currentRosterA.concat(currentRosterB).find(r => r.id === currentBowlerId)?.name) : "Waiting..."}</span>
