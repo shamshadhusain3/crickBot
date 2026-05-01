@@ -15,7 +15,9 @@ export default function LiveMatch() {
     const queryClient = useQueryClient()
 
     const role = queryParams.get('role') || 'viewer' // Default to viewer for safety
-    const { activeMatchId, mode, rosterA: storeRosterA, rosterB: storeRosterB, teamA, teamB, overs, liveCache, updateLiveCache } = useMatchStore()
+    const { activeMatchId, mode, rosterA: storeRosterA, rosterB: storeRosterB, teamA, teamB, overs, liveCache, updateLiveCache, pendingActions, addToPendingActions, clearPendingActions } = useMatchStore()
+    const [isOnline, setIsOnline] = useState(navigator.onLine)
+
 
 
     const matchId = activeMatchId || matchIdFromParams
@@ -176,6 +178,38 @@ export default function LiveMatch() {
         }
     }, [matchData])
 
+    // --- OFFLINE SYNC LOGIC ---
+    useEffect(() => {
+        const handleOnline = () => {
+            setIsOnline(true)
+            syncPendingActions()
+        }
+        const handleOffline = () => setIsOnline(false)
+
+        window.addEventListener('online', handleOnline)
+        window.addEventListener('offline', handleOffline)
+        return () => {
+            window.removeEventListener('online', handleOnline)
+            window.removeEventListener('offline', handleOffline)
+        }
+    }, [pendingActions])
+
+    const syncPendingActions = async () => {
+        const myActions = pendingActions.filter(a => a.matchId === matchId)
+        if (myActions.length === 0) return
+
+        for (const action of myActions) {
+            try {
+                await postDelivery(action.payload)
+            } catch (e) {
+                console.error("Failed to sync action", e)
+                break; // Stop and retry later if server is still down
+            }
+        }
+        clearPendingActions(matchId)
+    }
+
+
     // --- ACTIONS ---
     const { mutateAsync: postDelivery, isPending } = useMutation({
         mutationFn: (payload) => matchService.recordDelivery(matchId, { ...payload, pin: umpirePin }),
@@ -267,7 +301,15 @@ export default function LiveMatch() {
         })
 
         // --- BACKGROUND SYNC ---
-        await postDelivery({ run, isExtra, extraType, isWicket })
+        if (navigator.onLine) {
+            try {
+                await postDelivery({ run, isExtra, extraType, isWicket })
+            } catch (e) {
+                addToPendingActions(matchId, { run, isExtra, extraType, isWicket })
+            }
+        } else {
+            addToPendingActions(matchId, { run, isExtra, extraType, isWicket })
+        }
     }
 
     const swapStrikeManual = () => {
@@ -540,10 +582,18 @@ export default function LiveMatch() {
                     <div className="flex flex-col">
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Umpire Console</span>
-                            {isPending && (
+                            {(isPending || pendingActions.length > 0) && (
                                 <div className="flex items-center gap-1 bg-brand-500/10 px-1.5 py-0.5 rounded-full">
                                     <div className="w-1 h-1 bg-brand-500 rounded-full animate-pulse" />
-                                    <span className="text-[7px] font-black text-brand-500 uppercase">Saving...</span>
+                                    <span className="text-[7px] font-black text-brand-500 uppercase">
+                                        {pendingActions.length > 0 ? `Queued (${pendingActions.length})` : 'Saving...'}
+                                    </span>
+                                </div>
+                            )}
+                            {!isOnline && (
+                                <div className="flex items-center gap-1 bg-red-500/10 px-1.5 py-0.5 rounded-full">
+                                    <WifiOff className="w-2.5 h-2.5 text-red-500" />
+                                    <span className="text-[7px] font-black text-red-500 uppercase">Offline</span>
                                 </div>
                             )}
                         </div>

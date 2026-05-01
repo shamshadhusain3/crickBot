@@ -21,6 +21,8 @@ export const useMatchStore = create(
       umpirePin: '', // 4-digit PIN
       myMatches: [], // { id, pin } Array of matches managed by this user
       liveCache: {}, // { [matchId]: lastKnownState }
+      pendingActions: [], // [{ matchId, payload, timestamp }]
+
 
       
       // Actions
@@ -54,6 +56,15 @@ export const useMatchStore = create(
       updateLiveCache: (matchId, data) => set((state) => ({
           liveCache: { ...state.liveCache, [matchId]: { ...state.liveCache[matchId], ...data, timestamp: Date.now() } }
       })),
+
+      addToPendingActions: (matchId, payload) => set((state) => ({
+          pendingActions: [...state.pendingActions, { matchId, payload, timestamp: Date.now() }]
+      })),
+
+      clearPendingActions: (matchId) => set((state) => ({
+          pendingActions: state.pendingActions.filter(a => a.matchId !== matchId)
+      })),
+
 
     }),
     {
