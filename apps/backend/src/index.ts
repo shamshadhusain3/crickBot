@@ -136,6 +136,7 @@ async function calculatePlayerStats(inningId: string, strikerId: string | null, 
         const playerTeamName = mPlayer?.team === 'A' ? match?.teamA : match?.teamB;
         
         // POTM only from winning team logic
+        // If match is completed, we ONLY pick from the winning team
         if (isCompleted && winnerTeamLabel && playerTeamName !== winnerTeamLabel) return;
 
         // Batting Stats across match
@@ -454,7 +455,11 @@ fastify.post('/api/matches/:id/deliveries', async (request, reply) => {
           })
           responseData.event = 'match-completed'
           responseData.winningTeam = winningTeam
-          responseData.reason = isChased ? `Won by ${10 - updatedInning.totalWickets} wickets.` : `Won by ${freshMatch.target - 1 - updatedInning.totalRuns} runs.`
+          responseData.reason = isChased ? `${10 - updatedInning.totalWickets} wickets.` : `${freshMatch.target - 1 - updatedInning.totalRuns} runs.`
+          
+          // RE-CALCULATE stats one last time to ensure POTM is from the winning team
+          const finalStats = await calculatePlayerStats(updatedInning.id, nextStrikerId, nextNonStrikerId, nextBowlerId)
+          responseData.stats = finalStats
       }
   }
 
