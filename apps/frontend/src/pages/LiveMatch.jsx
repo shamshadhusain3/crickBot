@@ -15,7 +15,8 @@ export default function LiveMatch() {
     const queryClient = useQueryClient()
 
     const role = queryParams.get('role') || 'viewer' // Default to viewer for safety
-    const { activeMatchId, mode, rosterA: storeRosterA, rosterB: storeRosterB, teamA, teamB, overs } = useMatchStore()
+    const { activeMatchId, mode, rosterA: storeRosterA, rosterB: storeRosterB, teamA, teamB, overs, liveCache, updateLiveCache } = useMatchStore()
+
 
     const matchId = activeMatchId || matchIdFromParams
 
@@ -52,8 +53,26 @@ export default function LiveMatch() {
     // --- API HYDRATION ---
     const { data: initialData, isLoading, refetch } = useQuery({
         queryKey: ['match', matchId],
-        queryFn: () => matchService.getMatch(matchId)
+        queryFn: () => matchService.getMatch(matchId),
+        staleTime: 1000 * 60 // 1 minute
     })
+
+    // --- HYDRATION FROM CACHE ---
+    useEffect(() => {
+        const cached = liveCache?.[matchId]
+        if (cached && !initialData) {
+            setRuns(cached.runs || 0)
+            setWickets(cached.wickets || 0)
+            setOversCount(cached.oversCount || 0)
+            setBallsThisOver(cached.ballsThisOver || 0)
+            setStrikerId(cached.strikerId || null)
+            setNonStrikerId(cached.nonStrikerId || null)
+            setCurrentBowlerId(cached.currentBowlerId || null)
+            setStats(cached.stats || null)
+            setTarget(cached.target || null)
+        }
+    }, [matchId])
+
 
     useEffect(() => {
         if (initialData && !initialData.error) {
@@ -71,6 +90,19 @@ export default function LiveMatch() {
             const legalBalls = lastInning.deliveries.filter(d => d.extras === 0).length
             setOversCount(Math.floor(legalBalls / 6))
             setBallsThisOver(legalBalls % 6)
+
+            // Cache it
+            updateLiveCache(matchId, {
+                runs: lastInning.totalRuns,
+                wickets: lastInning.totalWickets,
+                oversCount: Math.floor(legalBalls / 6),
+                ballsThisOver: legalBalls % 6,
+                strikerId: lastInning.strikerId,
+                nonStrikerId: lastInning.nonStrikerId,
+                currentBowlerId: lastInning.currentBowlerId,
+                stats: initialData.stats,
+                target: initialData.target
+            })
 
             if (initialData.status === 'completed') {
                 setOverlayMessage({
@@ -114,6 +146,20 @@ export default function LiveMatch() {
             if (matchData.innings) {
                 setMatchDataFull(prev => ({ ...prev, innings: matchData.innings }))
             }
+
+            // Sync Cache
+            updateLiveCache(matchId, {
+                runs: matchData.score?.runs || runs,
+                wickets: matchData.score?.wickets || wickets,
+                oversCount: matchData.score?.overs || oversCount,
+                ballsThisOver: matchData.score?.balls || ballsThisOver,
+                strikerId: matchData.strikerId || strikerId,
+                nonStrikerId: matchData.nonStrikerId || nonStrikerId,
+                currentBowlerId: matchData.currentBowlerId || currentBowlerId,
+                stats: matchData.stats || stats,
+                target: matchData.target || target
+            })
+
 
             if (matchData.event === 'inning-break') {
                 setTarget(matchData.target);
@@ -172,6 +218,55 @@ export default function LiveMatch() {
 
     const sendDelivery = async (run, isExtra = false, extraType = '', isWicket = false) => {
         if (overlayMessage || isPending) return;
+
+        // --- OPTIMISTIC UPDATE (Instant UI) ---
+        const finalRuns = run + (isExtra ? 1 : 0) // Assume +1 for extras
+        let nextStriker = strikerId
+        let nextNonStriker = nonStrikerId
+        let nextWickets = wickets + (isWicket ? 1 : 0)
+        let nextBalls = ballsThisOver
+        let nextOvers = oversCount
+
+        // 1. Update Score & Wickets
+        setRuns(prev => prev + finalRuns)
+        if (isWicket) setWickets(prev => prev + 1)
+
+        // 2. Update Balls (Legal only)
+        if (!isExtra) {
+            nextBalls = (ballsThisOver + 1) % 6
+            if (nextBalls === 0) nextOvers += 1
+            setBallsThisOver(nextBalls)
+            setOversCount(nextOvers)
+        }
+
+        // 3. Strike Rotation (Simplified Prediction)
+        if (finalRuns % 2 !== 0) {
+            const temp = nextStriker
+            nextStriker = nextNonStriker
+            nextNonStriker = temp
+        }
+        if (isWicket) nextStriker = null
+        if (!isExtra && nextBalls === 0) { // Over end swap
+            const temp = nextStriker
+            nextStriker = nextNonStriker
+            nextNonStriker = temp
+        }
+
+        setStrikerId(nextStriker)
+        setNonStrikerId(nextNonStriker)
+        if (!isExtra && nextBalls === 0) setCurrentBowlerId(null)
+
+        // Local cache update for instant hydration
+        updateLiveCache(matchId, { 
+            runs: runs + finalRuns, 
+            wickets: nextWickets, 
+            oversCount: nextOvers, 
+            ballsThisOver: nextBalls,
+            strikerId: nextStriker,
+            nonStrikerId: nextNonStriker
+        })
+
+        // --- BACKGROUND SYNC ---
         await postDelivery({ run, isExtra, extraType, isWicket })
     }
 
@@ -442,12 +537,19 @@ export default function LiveMatch() {
             <div className="px-5 py-4 bg-slate-900/80 border-b border-white/5 flex flex-col z-10 flex-none relative backdrop-blur-md">
                 <div className="flex justify-between items-center mb-4">
                     <button onClick={() => navigate('/')} className="p-2 -ml-2 text-slate-500"><ChevronLeft className="w-6 h-6" /></button>
-                    <div className="text-center">
-                        <div className="text-[9px] font-black text-slate-500 tracking-[0.3em] flex items-center justify-center gap-2 uppercase">
-                            {isUmpire ? <Unlock className="w-2.5 h-2.5 text-brand-500" /> : <Lock className="w-2.5 h-2.5" />}
-                            {isUmpire ? 'UMPIRE CONSOLE' : 'MATCH STREAM'}
+                    <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Umpire Console</span>
+                            {isPending && (
+                                <div className="flex items-center gap-1 bg-brand-500/10 px-1.5 py-0.5 rounded-full">
+                                    <div className="w-1 h-1 bg-brand-500 rounded-full animate-pulse" />
+                                    <span className="text-[7px] font-black text-brand-500 uppercase">Saving...</span>
+                                </div>
+                            )}
                         </div>
-                        <div className="text-sm font-black tracking-tight uppercase">{initialData?.teamA} <span className="text-brand-500">vs</span> {initialData?.teamB}</div>
+                        <h1 className="text-xl font-black text-white tracking-tighter uppercase italic">
+                            {initialData?.teamA} <span className="text-brand-500">VS</span> {initialData?.teamB}
+                        </h1>
                     </div>
                     <div className="flex items-center gap-1">
                         <button onClick={shareMatch} className="p-2.5 bg-brand-500/10 rounded-xl text-brand-500 transition-all active:scale-95"><Share2 className="w-5 h-5" /></button>

@@ -20,6 +20,8 @@ export const useMatchStore = create(
       decision: '', // bat or bowl
       umpirePin: '', // 4-digit PIN
       myMatches: [], // { id, pin } Array of matches managed by this user
+      liveCache: {}, // { [matchId]: lastKnownState }
+
       
       // Actions
       addMatchToCollection: (id, pin) => set((state) => ({ 
@@ -48,6 +50,11 @@ export const useMatchStore = create(
          decision: '',
          umpirePin: ''
       }),
+
+      updateLiveCache: (matchId, data) => set((state) => ({
+          liveCache: { ...state.liveCache, [matchId]: { ...state.liveCache[matchId], ...data, timestamp: Date.now() } }
+      })),
+
     }),
     {
       name: 'crickbot-match-storage', // key in local storage
