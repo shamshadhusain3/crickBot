@@ -8,7 +8,8 @@ import { useMutation } from '@tanstack/react-query'
 export default function Toss() {
   const navigate = useNavigate()
   
-  const { teamA, teamB, mode, rosterA, rosterB, overs, includeExtras, umpirePin, setTossResult, setActiveMatch, setSetupData, addMatchToCollection } = useMatchStore()
+  const { teamA, teamB, mode, rosterA, rosterB, overs, includeExtras, umpirePin, setTossResult, setActiveMatch, setSetupData, addMatchToCollection, updateLiveCache, addToPendingActions } = useMatchStore()
+
   
   // Automatically boot out if state is missing
   if (!teamA || !teamB) {
@@ -51,7 +52,7 @@ export default function Toss() {
     const batTeam = (winner === teamA && decision === 'bat') || (winner === teamB && decision === 'bowl') ? teamA : teamB;
     setTossResult(winner, decision, batTeam);
 
-    await launchMatch({
+    const payload = {
        teamA, 
        teamB, 
        overs, 
@@ -61,7 +62,38 @@ export default function Toss() {
        rosterA,
        rosterB,
        umpirePin
-    });
+    };
+
+    if (navigator.onLine) {
+        await launchMatch(payload);
+    } else {
+        // --- OFFLINE MODE ---
+        const localId = `match_local_${Date.now()}`;
+        
+        // 1. Register in Store
+        addMatchToCollection(localId, umpirePin);
+        setActiveMatch(localId);
+
+        // 2. Initialize Cache for LiveMatch hydration
+        updateLiveCache(localId, {
+            runs: 0,
+            wickets: 0,
+            oversCount: 0,
+            ballsThisOver: 0,
+            strikerId: null,
+            nonStrikerId: null,
+            currentBowlerId: null,
+            target: null,
+            teamA,
+            teamB
+        });
+
+        // 3. Queue for Background Sync
+        addToPendingActions(localId, { type: 'CREATE_MATCH', ...payload });
+
+        // 4. Navigate
+        navigate(`/match/${localId}?role=umpire`, { state: { autoVerifyPin: umpirePin } });
+    }
   }
 
   return (

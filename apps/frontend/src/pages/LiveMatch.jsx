@@ -114,8 +114,15 @@ export default function LiveMatch() {
                     type: 'final'
                 })
             } else if (lastInning.status === 'completed' && initialData.innings.length === 1) {
-                setOverlayMessage({ title: "Inning Break", subtitle: `First inning over. Target for ${initialData.innings[0].battingTeam === (initialData.teamA) ? initialData.teamB : initialData.teamA} is ${initialData.target} runs.`, type: 'break' })
+                const team2 = initialData.innings[0].battingTeam === (initialData.teamA) ? initialData.teamB : initialData.teamA
+                setOverlayMessage({ 
+                    title: "Inning Break", 
+                    subtitle: `Target for ${team2} is ${initialData.target} runs.`, 
+                    targetValue: initialData.target,
+                    type: 'break' 
+                })
             }
+
         }
     }, [initialData])
 
@@ -178,6 +185,11 @@ export default function LiveMatch() {
         }
     }, [matchData])
 
+    const { mutateAsync: launchMatch } = useMutation({
+        mutationFn: (payload) => matchService.createMatch(payload)
+    })
+
+
     // --- OFFLINE SYNC LOGIC ---
     useEffect(() => {
         const handleOnline = () => {
@@ -198,16 +210,29 @@ export default function LiveMatch() {
         const myActions = pendingActions.filter(a => a.matchId === matchId)
         if (myActions.length === 0) return
 
+        let currentMatchId = matchId
         for (const action of myActions) {
             try {
-                await postDelivery(action.payload)
+                if (action.payload.type === 'CREATE_MATCH') {
+                    const { type, ...matchPayload } = action.payload
+                    const result = await launchMatch(matchPayload)
+                    currentMatchId = result.id
+                    // Update store so future actions use the real ID
+                    addMatchToCollection(result.id, result.umpirePin)
+                } else {
+                    await matchService.recordDelivery(currentMatchId, { ...action.payload, pin: umpirePin })
+                }
             } catch (e) {
                 console.error("Failed to sync action", e)
-                break; // Stop and retry later if server is still down
+                break; // Stop and retry later
             }
         }
         clearPendingActions(matchId)
+        if (currentMatchId !== matchId) {
+            navigate(`/match/${currentMatchId}?role=umpire`, { replace: true, state: { autoVerifyPin: umpirePin } })
+        }
     }
+
 
 
     // --- ACTIONS ---
@@ -457,7 +482,8 @@ export default function LiveMatch() {
                             <h2 className="text-4xl font-black text-white tracking-tighter mb-4 uppercase relative z-10">INNING OVER!</h2>
                             <div className="bg-white/5 border border-white/10 rounded-2xl px-8 py-6 mb-10 relative z-10 max-w-sm">
                                 <p className="text-sm text-slate-500 font-bold uppercase tracking-widest mb-2 italic">The Target is</p>
-                                <p className="text-5xl font-black text-brand-400 tracking-tighter mb-2">{overlayMessage.subtitle.match(/\d+/)[0]}</p>
+                                <p className="text-5xl font-black text-brand-400 tracking-tighter mb-2">{overlayMessage.targetValue || overlayMessage.subtitle.match(/\d+/)[0]}</p>
+
                                 <p className="text-xs text-slate-400 font-bold uppercase tracking-tight">Needed by {overlayMessage.subtitle.match(/for (.*) is/)?.[1] || 'Team'}</p>
                             </div>
                             <div className="w-full max-w-xs relative z-10">
