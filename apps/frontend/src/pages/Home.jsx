@@ -4,7 +4,7 @@ import { PlusCircle, PlayCircle, Trophy, Users, BarChart3, Wifi, Smartphone, Gau
 import { useQuery } from '@tanstack/react-query'
 import { matchService } from '../services/matchService'
 import { useMatchStore } from '../store/useMatchStore'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 export default function Home() {
     const navigate = useNavigate()
@@ -137,8 +137,8 @@ export default function Home() {
             {/* PWA INSTALL BANNER */}
             {deferredPrompt && showInstallBanner && (
                 <div className="mb-6 bg-gradient-to-r from-indigo-600 to-indigo-500 p-4 rounded-[2rem] flex items-center justify-between shadow-xl shadow-indigo-500/20 border border-white/10 animate-slide-up relative overflow-hidden group">
-                     <div className="absolute inset-0 bg-white/10 opacity-0 group-active:opacity-100 transition-opacity" />
-                     <div className="flex items-center gap-3 relative z-10">
+                    <div className="absolute inset-0 bg-white/10 opacity-0 group-active:opacity-100 transition-opacity" />
+                    <div className="flex items-center gap-3 relative z-10">
                         <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center">
                             <Smartphone className="w-5 h-5 text-white" />
                         </div>
@@ -146,21 +146,21 @@ export default function Home() {
                             <p className="text-[10px] font-black text-indigo-100 uppercase tracking-widest leading-none mb-1">Get the App</p>
                             <p className="text-xs font-black text-white uppercase tracking-tight">Install CrickBot Pro</p>
                         </div>
-                     </div>
-                     <div className="flex items-center gap-2 relative z-10">
-                        <button 
+                    </div>
+                    <div className="flex items-center gap-2 relative z-10">
+                        <button
                             onClick={handleInstallClick}
                             className="bg-white text-indigo-600 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
                         >
                             Install
                         </button>
-                        <button 
+                        <button
                             onClick={() => setShowInstallBanner(false)}
                             className="p-2 text-indigo-100/50 hover:text-white"
                         >
                             <XCircle className="w-4 h-4" />
                         </button>
-                     </div>
+                    </div>
                 </div>
             )}
 
@@ -170,7 +170,7 @@ export default function Home() {
                 <div className="inline-flex p-3 rounded-3xl bg-brand-500/10 mb-4 ring-1 ring-brand-500/20">
                     <Trophy className="w-8 h-8 text-brand-500" />
                 </div>
-                <h1 
+                <h1
                     onClick={() => {
                         const newCount = vaultClicks + 1;
                         if (newCount >= 5) {
