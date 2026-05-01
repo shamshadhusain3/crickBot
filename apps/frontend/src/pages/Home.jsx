@@ -149,51 +149,50 @@ export default function Home() {
 
             {/* PWA INSTALL BANNER (Android/Chrome) */}
             {deferredPrompt && showInstallBanner && !isStandalone && (
-                <div className="mb-6 bg-gradient-to-r from-indigo-600 to-indigo-500 p-4 rounded-[2rem] flex items-center justify-between shadow-xl shadow-indigo-500/20 border border-white/10 animate-slide-up relative overflow-hidden group">
+                <div className="mb-6 bg-indigo-600 p-4 rounded-[2.5rem] flex items-center justify-between shadow-2xl shadow-indigo-600/30 border border-white/10 animate-slide-up relative overflow-hidden group">
                     <div className="absolute inset-0 bg-white/10 opacity-0 group-active:opacity-100 transition-opacity" />
-                    <div className="flex items-center gap-3 relative z-10">
-                        <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center">
-                            <Smartphone className="w-5 h-5 text-white" />
+                    <div className="flex items-center gap-4 relative z-10">
+                        <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
+                            <Smartphone className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black text-indigo-100 uppercase tracking-widest leading-none mb-1">Get the App</p>
-                            <p className="text-xs font-black text-white uppercase tracking-tight">Install CrickBot Pro</p>
+                            <p className="text-[10px] font-black text-indigo-100 uppercase tracking-[0.2em] leading-none mb-1">Install App</p>
+                            <p className="text-sm font-black text-white uppercase tracking-tight">CrickBot Pro</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 relative z-10">
                         <button
                             onClick={handleInstallClick}
-                            className="bg-white text-indigo-600 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+                            className="bg-white text-indigo-600 px-6 py-2.5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
                         >
-                            Install
-                        </button>
-                        <button
-                            onClick={() => setShowInstallBanner(false)}
-                            className="p-2 text-indigo-100/50 hover:text-white"
-                        >
-                            <XCircle className="w-4 h-4" />
+                            Get Now
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* PWA INSTALL BANNER (iOS/Safari) */}
-            {isIOS && showInstallBanner && !isStandalone && !deferredPrompt && (
-                <div className="mb-6 bg-indigo-600/20 p-5 rounded-[2rem] border border-indigo-500/30 animate-slide-up">
+            {/* PWA INSTALL BANNER (iOS/General Fallback) */}
+            {((isIOS && !isStandalone) || (!deferredPrompt && !isStandalone && showInstallBanner)) && (
+                <div className="mb-6 bg-slate-900/50 p-5 rounded-[2.5rem] border border-white/5 animate-slide-up">
                     <div className="flex items-start gap-4">
-                        <div className="w-10 h-10 bg-indigo-500 rounded-2xl flex items-center justify-center flex-none">
-                            <Smartphone className="w-5 h-5 text-white" />
+                        <div className="w-12 h-12 bg-indigo-500/20 rounded-2xl flex items-center justify-center flex-none">
+                            <Smartphone className="w-6 h-6 text-indigo-400" />
                         </div>
                         <div className="flex-1">
-                            <p className="text-xs font-black text-white uppercase tracking-tight mb-1">Install on iPhone</p>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase leading-relaxed">
-                                Tap <Share2 className="w-3 h-3 inline text-brand-500 mx-0.5" /> then <span className="text-white">"Add to Home Screen"</span> for the full pro experience.
+                            <p className="text-xs font-black text-white uppercase tracking-tight mb-1">Download to Home Screen</p>
+                            <p className="text-[10px] font-bold text-slate-500 uppercase leading-relaxed">
+                                {isIOS ? (
+                                    <>Tap <Share2 className="w-3 h-3 inline text-brand-500 mx-0.5" /> then <span className="text-white">"Add to Home Screen"</span></>
+                                ) : (
+                                    <>Open Menu <span className="text-white">⋮</span> and select <span className="text-white">"Install App"</span></>
+                                )}
                             </p>
                         </div>
-                        <button onClick={() => setShowInstallBanner(false)} className="text-slate-600"><XCircle className="w-5 h-5" /></button>
+                        <button onClick={() => setShowInstallBanner(false)} className="text-slate-700"><XCircle className="w-5 h-5" /></button>
                     </div>
                 </div>
             )}
+
 
 
 
