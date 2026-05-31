@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Coins, ChevronLeft, ArrowRight, Activity } from 'lucide-react'
+import { Coins, ChevronLeft, ArrowRight, Activity, RefreshCw } from 'lucide-react'
 import { useMatchStore } from '../store/useMatchStore'
 import { matchService } from '../services/matchService'
 import { useMutation } from '@tanstack/react-query'
@@ -118,7 +118,7 @@ export default function Toss() {
             <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 w-24 h-4 bg-black/40 blur-md rounded-full transition-all ${flipping ? 'scale-50 opacity-20' : 'scale-100 opacity-60'}`} />
         </div>
 
-        <div className="h-48 w-full flex flex-col items-center justify-start">
+        <div className="w-full flex flex-col items-center justify-start">
             {!winner && !flipping && (
               <button 
                 onClick={handleFlip} 
@@ -154,19 +154,29 @@ export default function Toss() {
                     Bowl
                   </button>
                 </div>
+
+                <button 
+                  onClick={() => { setWinner(null); setDecision(null); }}
+                  className="mt-4 flex items-center justify-center gap-2 mx-auto px-5 py-2.5 rounded-full text-sm font-semibold text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/50 hover:border-slate-600 transition-all hover:bg-slate-700/60"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Re-Toss
+                </button>
+
+                {decision && (
+                  <button 
+                    onClick={handleStart} 
+                    disabled={isPending} 
+                    className="btn-primary mt-4 py-4 text-lg group disabled:opacity-50 w-full"
+                  >
+                    {isPending ? 'Starting Server...' : 'Start Dashboard'}
+                    {!isPending && <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform inline"/>}
+                  </button>
+                )}
               </div>
             )}
         </div>
       </div>
-      
-       {decision && (
-         <div className="pb-8 animate-fade-in">
-             <button onClick={handleStart} disabled={isPending} className="btn-primary py-4 text-lg group disabled:opacity-50">
-                {isPending ? 'Starting Server...' : 'Start Dashboard'}
-                {!isPending && <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform"/>}
-             </button>
-         </div>
-       )}
       
       <div className="absolute bottom-[0%] right-[0%] w-96 h-96 bg-brand-500/10 blur-[120px] rounded-full pointer-events-none" />
     </div>

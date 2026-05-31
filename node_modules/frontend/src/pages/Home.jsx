@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 export default function Home() {
     const navigate = useNavigate()
-    const { myMatches } = useMatchStore()
+    const { myMatches, addMatchToCollection } = useMatchStore()
 
     const [activeTab, setActiveTab] = useState('live') // 'live', 'completed'
     const [vaultClicks, setVaultClicks] = useState(0)
@@ -70,6 +70,22 @@ export default function Home() {
         const isSecondInning = match.innings.length > 1;
         const myMatchRecord = myMatches.find(m => m.id === match.id)
         const isMyMatch = !!myMatchRecord
+
+        const [showPinClaim, setShowPinClaim] = useState(false)
+        const [claimPin, setClaimPin] = useState('')
+        const [claimError, setClaimError] = useState('')
+
+        const handleClaim = () => {
+            if (claimPin === match.umpirePin) {
+                addMatchToCollection(match.id, claimPin)
+                setShowPinClaim(false)
+                setClaimPin('')
+                setClaimError('')
+            } else {
+                setClaimError('Wrong PIN')
+                setClaimPin('')
+            }
+        }
 
         return (
             <div className={`p-6 shadow-2xl relative overflow-hidden group transition-all rounded-[2.5rem] border
@@ -139,10 +155,56 @@ export default function Home() {
                             </button>
                         )}
                     </div>
+
+                    {/* Claim Umpire Access — shown only for live matches you don't own yet */}
+                    {!isCompleted && !isMyMatch && (
+                        <div className="pt-1">
+                            {!showPinClaim ? (
+                                <button
+                                    onClick={() => setShowPinClaim(true)}
+                                    className="w-full py-2.5 rounded-2xl font-black text-[9px] uppercase tracking-widest text-slate-600 hover:text-slate-400 border border-dashed border-slate-800 hover:border-slate-600 flex items-center justify-center gap-2 transition-all"
+                                >
+                                    <ShieldCheck className="w-3.5 h-3.5" /> I'm the Umpire
+                                </button>
+                            ) : (
+                                <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-4 animate-fade-in">
+                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-3 text-center">Enter Umpire PIN</p>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="number"
+                                            value={claimPin}
+                                            onChange={(e) => { setClaimPin(e.target.value); setClaimError('') }}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleClaim()}
+                                            placeholder="••••"
+                                            maxLength={4}
+                                            className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white font-black text-sm text-center focus:outline-none focus:border-indigo-500 transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                            autoFocus
+                                        />
+                                        <button
+                                            onClick={handleClaim}
+                                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95"
+                                        >
+                                            Go
+                                        </button>
+                                        <button
+                                            onClick={() => { setShowPinClaim(false); setClaimPin(''); setClaimError('') }}
+                                            className="text-slate-600 hover:text-slate-400 px-3 transition-colors"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                    {claimError && (
+                                        <p className="text-red-400 text-[9px] font-black uppercase tracking-widest text-center mt-2">{claimError}</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         )
     }
+
 
     return (
         <div className="p-6 pb-40 max-w-lg mx-auto min-h-screen bg-slate-950 flex flex-col pt-8 relative z-10 w-full animate-fade-in">

@@ -22,28 +22,6 @@ export default function LiveMatch() {
     const [tempWicketData, setTempWicketData] = useState({})
     const [showUndoConfirm, setShowUndoConfirm] = useState(false)
 
-    // --- SYNC LOCAL STATE FROM SERVER ---
-    useEffect(() => {
-        if (initialData) {
-            setRuns(initialData.totalRuns || 0)
-            setWickets(initialData.totalWickets || 0)
-            
-            // Calculate overs from legal deliveries
-            const allInnings = initialData.innings || []
-            const currentInn = allInnings[allInnings.length - 1]
-            const legalBalls = currentInn?.deliveries?.filter(d => d.extras === 0) || []
-            setOversCount(Math.floor(legalBalls.length / 6))
-            setBallsThisOver(legalBalls.length % 6)
-            
-            setStrikerId(currentInn?.strikerId)
-            setNonStrikerId(currentInn?.nonStrikerId)
-            setCurrentBowlerId(currentInn?.currentBowlerId)
-        }
-    }, [initialData])
-
-
-
-
 
     const matchId = activeMatchId || matchIdFromParams
 
@@ -299,12 +277,9 @@ export default function LiveMatch() {
             // Local undo for queued actions
             const myActions = pendingActions.filter(a => a.matchId === matchId)
             if (myActions.length > 0) {
-                // This is complex for local-only, but we can clear the last one
-                // For simplicity, we just clear the last ball from queue
-                const last = myActions[myActions.length - 1]
                 clearPendingActions(matchId) // Clear all and re-add except last
                 myActions.slice(0, -1).forEach(a => addToPendingActions(matchId, a.payload))
-                refetch() // Reload from last known server state + remaining queue
+                await refetch() // Reload from last known server state
                 setShowUndoConfirm(false)
                 return
             }
@@ -312,10 +287,17 @@ export default function LiveMatch() {
 
         try {
             await matchService.undoLastDelivery(matchId, umpirePin)
-            refetch()
+            // Immediately reset optimistic UI to avoid stale state showing
+            // while the refetch resolves from server
+            setRuns(0)
+            setWickets(0)
+            setOversCount(0)
+            setBallsThisOver(0)
+            await refetch()
             setShowUndoConfirm(false)
         } catch (e) {
             alert("Failed to undo. Maybe there are no balls to undo?")
+            await refetch() // Still re-sync even on error
         }
     }
 
@@ -746,7 +728,7 @@ export default function LiveMatch() {
                             )
                         ) : null}
 
-                        <div className="flex-1 overflow-y-auto space-y-3 py-2 pr-1 scrollbar-none">
+                        <div className="flex-1 overflow-y-auto space-y-3 py-2 pr-1 scrollbar-none pb-64">
                             <div className="py-3 flex items-center gap-3 overflow-x-auto scrollbar-none snap-x h-14 bg-slate-900/30 rounded-2xl px-3 border border-white/5">
                                 <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest border-r border-white/10 pr-3 h-full flex items-center">Recent</span>
                                 {currentOverHistory.map((ball, i) => (
