@@ -89,6 +89,7 @@ model Delivery {
   extras      Int      @default(0)
   extraType   String   @default("none") // wide, no-ball, leg-bye
   wicketType  String   @default("none") // bowled, caught, lbw, runout
+  fielderId   String?
   pitchX      Float?
   pitchY      Float?
   createdAt   DateTime @default(now())

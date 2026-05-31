@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { Camera, Settings, Circle, Wifi, WifiOff, UserPlus, Repeat, UserCheck, ShieldAlert, ChevronDown, ChevronUp, Eye, EyeOff, BarChart3, History, PlayCircle, LogOut, XCircle, CheckCircle2, Share2, Lock, Unlock, Clipboard, ArrowLeftRight, Trophy, ChevronLeft, Calendar, Star, ArrowRight } from 'lucide-react'
+import { Camera, Settings, Circle, Wifi, WifiOff, UserPlus, Repeat, UserCheck, ShieldAlert, ChevronDown, ChevronUp, Eye, EyeOff, BarChart3, History, PlayCircle, LogOut, XCircle, CheckCircle2, Share2, Lock, Unlock, Clipboard, ArrowLeftRight, Trophy, ChevronLeft, Calendar, Star, ArrowRight, PlusCircle, Users, Smartphone, Gauge, ShieldCheck, Activity, RotateCcw } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 import { useMatchStore } from '../store/useMatchStore'
 import { matchService } from '../services/matchService'
@@ -15,8 +15,33 @@ export default function LiveMatch() {
     const queryClient = useQueryClient()
 
     const role = queryParams.get('role') || 'viewer' // Default to viewer for safety
-    const { activeMatchId, mode, rosterA: storeRosterA, rosterB: storeRosterB, teamA, teamB, overs, liveCache, updateLiveCache, pendingActions, addToPendingActions, clearPendingActions } = useMatchStore()
+    const { activeMatchId, mode, rosterA: storeRosterA, rosterB: storeRosterB, teamA, teamB, overs, liveCache, updateLiveCache, pendingActions, addToPendingActions, clearPendingActions, addMatchToCollection } = useMatchStore()
     const [isOnline, setIsOnline] = useState(navigator.onLine)
+    const [showWicketModal, setShowWicketModal] = useState(false)
+    const [wicketStep, setWicketStep] = useState(1) // 1: Type, 2: Fielder, 3: Out Player (Runout)
+    const [tempWicketData, setTempWicketData] = useState({})
+    const [showUndoConfirm, setShowUndoConfirm] = useState(false)
+
+    // --- SYNC LOCAL STATE FROM SERVER ---
+    useEffect(() => {
+        if (initialData) {
+            setRuns(initialData.totalRuns || 0)
+            setWickets(initialData.totalWickets || 0)
+            
+            // Calculate overs from legal deliveries
+            const allInnings = initialData.innings || []
+            const currentInn = allInnings[allInnings.length - 1]
+            const legalBalls = currentInn?.deliveries?.filter(d => d.extras === 0) || []
+            setOversCount(Math.floor(legalBalls.length / 6))
+            setBallsThisOver(legalBalls.length % 6)
+            
+            setStrikerId(currentInn?.strikerId)
+            setNonStrikerId(currentInn?.nonStrikerId)
+            setCurrentBowlerId(currentInn?.currentBowlerId)
+        }
+    }, [initialData])
+
+
 
 
 
@@ -269,73 +294,74 @@ export default function LiveMatch() {
         }
     }
 
-    const resumeNextInning = async () => {
-        setOverlayMessage(null)
-        setCurrentOverHistory([])
-        await refetch()
+    const handleUndo = async () => {
+        if (pendingActions.length > 0) {
+            // Local undo for queued actions
+            const myActions = pendingActions.filter(a => a.matchId === matchId)
+            if (myActions.length > 0) {
+                // This is complex for local-only, but we can clear the last one
+                // For simplicity, we just clear the last ball from queue
+                const last = myActions[myActions.length - 1]
+                clearPendingActions(matchId) // Clear all and re-add except last
+                myActions.slice(0, -1).forEach(a => addToPendingActions(matchId, a.payload))
+                refetch() // Reload from last known server state + remaining queue
+                setShowUndoConfirm(false)
+                return
+            }
+        }
+
+        try {
+            await matchService.undoLastDelivery(matchId, umpirePin)
+            refetch()
+            setShowUndoConfirm(false)
+        } catch (e) {
+            alert("Failed to undo. Maybe there are no balls to undo?")
+        }
     }
 
-    const sendDelivery = async (run, isExtra = false, extraType = '', isWicket = false) => {
+    const sendDelivery = async (run, isExtra = false, extraType = '', isWicket = false, wicketData = {}) => {
+        const { wicketType = 'fall', fielderId = null, outBatterId = strikerId } = wicketData;
+
         if (overlayMessage || isPending) return;
 
-        // --- OPTIMISTIC UPDATE (Instant UI) ---
+        // --- OPTIMISTIC UI ---
         const finalRuns = run + (isExtra ? 1 : 0) // Assume +1 for extras
-        let nextStriker = strikerId
-        let nextNonStriker = nonStrikerId
-        let nextWickets = wickets + (isWicket ? 1 : 0)
-        let nextBalls = ballsThisOver
-        let nextOvers = oversCount
-
-        // 1. Update Score & Wickets
-        setRuns(prev => prev + finalRuns)
-        if (isWicket) setWickets(prev => prev + 1)
-
-        // 2. Update Balls (Legal only)
+        
         if (!isExtra) {
-            nextBalls = (ballsThisOver + 1) % 6
-            if (nextBalls === 0) nextOvers += 1
+            const nextBalls = (ballsThisOver + 1) % 6
             setBallsThisOver(nextBalls)
-            setOversCount(nextOvers)
+            if (nextBalls === 0) {
+                setOversCount(prev => prev + 1)
+                setCurrentBowlerId(null)
+            }
         }
-
-        // 3. Strike Rotation (Simplified Prediction)
-        if (finalRuns % 2 !== 0) {
-            const temp = nextStriker
-            nextStriker = nextNonStriker
-            nextNonStriker = temp
+        setRuns(prev => prev + finalRuns)
+        if (isWicket) {
+            setWickets(prev => prev + 1)
+            if (outBatterId === nonStrikerId) {
+                setNonStrikerId(null)
+            } else {
+                setStrikerId(null)
+            }
+        } else if (finalRuns % 2 !== 0) {
+            const temp = strikerId
+            setStrikerId(nonStrikerId)
+            setNonStrikerId(temp)
         }
-        if (isWicket) nextStriker = null
-        if (!isExtra && nextBalls === 0) { // Over end swap
-            const temp = nextStriker
-            nextStriker = nextNonStriker
-            nextNonStriker = temp
-        }
-
-        setStrikerId(nextStriker)
-        setNonStrikerId(nextNonStriker)
-        if (!isExtra && nextBalls === 0) setCurrentBowlerId(null)
-
-        // Local cache update for instant hydration
-        updateLiveCache(matchId, { 
-            runs: runs + finalRuns, 
-            wickets: nextWickets, 
-            oversCount: nextOvers, 
-            ballsThisOver: nextBalls,
-            strikerId: nextStriker,
-            nonStrikerId: nextNonStriker
-        })
 
         // --- BACKGROUND SYNC ---
+        const payload = { run, isExtra, extraType, isWicket, wicketType, fielderId, outBatterId }
         if (navigator.onLine) {
             try {
-                await postDelivery({ run, isExtra, extraType, isWicket })
+                await postDelivery(payload)
             } catch (e) {
-                addToPendingActions(matchId, { run, isExtra, extraType, isWicket })
+                addToPendingActions(matchId, payload)
             }
         } else {
-            addToPendingActions(matchId, { run, isExtra, extraType, isWicket })
+            addToPendingActions(matchId, payload)
         }
     }
+
 
     const swapStrikeManual = () => {
         updatePlayers({ strikerId: nonStrikerId, nonStrikerId: strikerId })
@@ -847,7 +873,8 @@ export default function LiveMatch() {
                                                                 <span className="w-8 text-right text-brand-400 text-[10px] pr-1">{b.sr}</span>
                                                             </div>
                                                         </div>
-                                                        <span className="text-[9px] font-black text-slate-600 italic mt-0.5">b {b.bowledBy}</span>
+                                                        <span className="text-[9px] font-black text-slate-600 italic mt-0.5">{b.dismissal}</span>
+
                                                     </div>
                                                 ))}
                                                 {inn.stats?.retiredBatters?.map((b, bidx) => (
@@ -933,6 +960,13 @@ export default function LiveMatch() {
 
             {isUmpire && activeTab === 'live' && initialData?.status !== 'completed' && (
                 <div className={`p-5 bg-slate-900 border-t border-white/10 rounded-t-[3rem] shadow-[0_-20px_60px_rgba(0,0,0,0.8)] transition-all duration-500 ${(isSelectionRequired || overlayMessage || showExitConfirm) ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
+                    <div className="flex items-center justify-between mb-4 px-1">
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic">Scoring Console</span>
+                        <button onClick={() => setShowUndoConfirm(true)} className="flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-xl border border-white/5 active:scale-90 transition-all group">
+                            <RotateCcw className="w-3.5 h-3.5 text-indigo-400 group-hover:rotate-[-45deg] transition-transform" />
+                            <span className="text-[9px] font-black text-indigo-400 uppercase tracking-tighter">Undo Ball</span>
+                        </button>
+                    </div>
                     <div className="grid grid-cols-4 gap-3 mb-3">
                         <button onClick={() => sendDelivery(0)} disabled={isPending} className="bg-slate-800 h-14 rounded-2xl font-black active:scale-90 transition-all text-xs border-b-4 border-black uppercase">Dot</button>
                         <button onClick={() => sendDelivery(1)} disabled={isPending} className="bg-slate-800 h-14 rounded-2xl font-black text-xs border-b-4 border-black">1</button>
@@ -944,10 +978,122 @@ export default function LiveMatch() {
                     <div className="grid grid-cols-3 gap-3">
                         <button onClick={() => sendDelivery(0, true, 'wide', false)} className="bg-orange-600/10 text-orange-400 border border-orange-500/30 h-12 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95">Wide</button>
                         <button onClick={() => sendDelivery(0, true, 'no-ball', false)} className="bg-orange-600/10 text-orange-400 border border-orange-500/30 h-12 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95">No Ball</button>
-                        <button onClick={() => sendDelivery(0, false, '', true)} className="bg-red-600 h-12 rounded-2xl font-black text-[10px] uppercase tracking-widest border-b-4 border-red-900 shadow-xl shadow-red-900/30 active:scale-95">Wicket</button>
+                        <button onClick={() => setShowWicketModal(true)} className="bg-red-600 h-12 rounded-2xl font-black text-[10px] uppercase tracking-widest border-b-4 border-red-900 shadow-xl shadow-red-900/30 active:scale-95">Wicket</button>
+                    </div>
+                </div>
+            )}
+
+            {/* WICKET MODAL */}
+            {showWicketModal && (
+                <div className="fixed inset-0 z-[100] flex items-end justify-center px-4 pb-10 bg-black/80 backdrop-blur-sm animate-fade-in">
+                    <div className="w-full max-w-md bg-slate-900 rounded-[3rem] border border-white/10 p-6 shadow-2xl animate-slide-up">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-2xl font-black text-white uppercase italic">Wicket! <span className="text-red-500">
+                                {wicketStep === 1 ? 'Dismissal' : wicketStep === 2 ? 'Fielder' : 'Out Player'}
+                            </span></h3>
+                            <button onClick={() => { setShowWicketModal(false); setWicketStep(1); }} className="bg-slate-800 p-2 rounded-full text-slate-500"><XCircle className="w-6 h-6" /></button>
+                        </div>
+                        
+                        {wicketStep === 1 && (
+                            <div className="grid grid-cols-2 gap-3 mb-6">
+                                {['Caught', 'Bowled', 'Run Out', 'LBW', 'Stumped'].map(type => (
+                                    <button
+                                        key={type}
+                                        onClick={() => {
+                                            const lowerType = type.toLowerCase();
+                                            if (['caught', 'runout', 'stumped'].includes(lowerType)) {
+                                                setTempWicketData({ wicketType: lowerType });
+                                                setWicketStep(2);
+                                            } else {
+                                                sendDelivery(0, false, '', true, { wicketType: lowerType });
+                                                setShowWicketModal(false);
+                                            }
+                                        }}
+                                        className="bg-slate-800 hover:bg-red-600 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95"
+                                    >
+                                        {type}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {wicketStep === 2 && (
+                            <div className="space-y-4">
+                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Select the Fielder</p>
+                                <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto scrollbar-none pr-1">
+                                    {(initialData?.innings[0].battingTeam === initialData.teamA ? currentRosterB : currentRosterA).map(player => (
+                                        <button
+                                            key={player.id}
+                                            onClick={() => {
+                                                if (tempWicketData.wicketType === 'runout') {
+                                                    setTempWicketData(prev => ({ ...prev, fielderId: player.id }));
+                                                    setWicketStep(3);
+                                                } else {
+                                                    sendDelivery(0, false, '', true, { ...tempWicketData, fielderId: player.id });
+                                                    setShowWicketModal(false);
+                                                    setWicketStep(1);
+                                                }
+                                            }}
+                                            className="bg-slate-800 hover:bg-indigo-600 text-white p-4 rounded-xl text-[10px] font-black uppercase truncate"
+                                        >
+                                            {player.name}
+                                        </button>
+                                    ))}
+                                </div>
+                                <button onClick={() => setWicketStep(1)} className="w-full py-3 text-slate-500 font-black text-[10px] uppercase">Back</button>
+                            </div>
+                        )}
+
+                        {wicketStep === 3 && (
+                            <div className="space-y-4">
+                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Who is Out?</p>
+                                <div className="grid grid-cols-1 gap-3">
+                                    {[
+                                        { id: strikerId, name: currentRosterA.concat(currentRosterB).find(r => r.id === strikerId)?.name || 'Striker', label: 'Striker' },
+                                        { id: nonStrikerId, name: currentRosterA.concat(currentRosterB).find(r => r.id === nonStrikerId)?.name || 'Non-Striker', label: 'Non-Striker' }
+                                    ].map(p => (
+                                        <button
+                                            key={p.id}
+                                            onClick={() => {
+                                                sendDelivery(0, false, '', true, { ...tempWicketData, outBatterId: p.id });
+                                                setShowWicketModal(false);
+                                                setWicketStep(1);
+                                            }}
+                                            className="bg-slate-800 hover:bg-red-600 text-white p-5 rounded-2xl font-black text-xs uppercase flex justify-between items-center"
+                                        >
+                                            <span>{p.name}</span>
+                                            <span className="text-[9px] opacity-40 italic">({p.label})</span>
+                                        </button>
+                                    ))}
+                                </div>
+                                <button onClick={() => setWicketStep(2)} className="w-full py-3 text-slate-500 font-black text-[10px] uppercase">Back</button>
+                            </div>
+                        )}
+                        
+                        {wicketStep === 1 && <p className="text-[10px] text-center font-bold text-slate-600 uppercase tracking-widest mt-4">Select the type of out to proceed</p>}
+                    </div>
+                </div>
+            )}
+
+
+            {/* UNDO CONFIRM */}
+            {showUndoConfirm && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/90 backdrop-blur-md animate-fade-in">
+                    <div className="bg-slate-900 border border-indigo-500/30 p-10 rounded-[3.5rem] text-center max-w-xs shadow-2xl shadow-indigo-500/30 relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500" />
+                        <div className="w-20 h-20 bg-indigo-500/20 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+                            <RotateCcw className="w-10 h-10 text-indigo-400" />
+                        </div>
+                        <h3 className="text-2xl font-black text-white uppercase mb-3 tracking-tighter">Undo Last Ball?</h3>
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wide leading-relaxed mb-8">This will permanently remove the last delivery and revert the score.</p>
+                        <div className="flex flex-col gap-3">
+                            <button onClick={handleUndo} className="w-full py-5 bg-indigo-600 rounded-2xl font-black text-xs uppercase text-white shadow-xl shadow-indigo-600/40 active:scale-95 transition-all">Yes, Revert Score</button>
+                            <button onClick={() => setShowUndoConfirm(false)} className="w-full py-5 bg-slate-800 rounded-2xl font-black text-xs uppercase text-slate-400 active:scale-95 transition-all">Cancel</button>
+                        </div>
                     </div>
                 </div>
             )}
         </div>
     )
 }
+

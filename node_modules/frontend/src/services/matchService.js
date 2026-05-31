@@ -26,5 +26,9 @@ export const matchService = {
   
   deleteMatch: async (matchId, vaultPin) => {
     return await apiClient.delete(`/matches/${matchId}`, { data: { vaultPin } });
+  },
+
+  undoLastDelivery: async (matchId, pin) => {
+    return await apiClient.delete(`/matches/${matchId}/deliveries/last`, { data: { pin } });
   }
 };
