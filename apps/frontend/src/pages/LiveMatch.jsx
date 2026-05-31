@@ -302,7 +302,7 @@ export default function LiveMatch() {
     }
 
     const sendDelivery = async (run, isExtra = false, extraType = '', isWicket = false, wicketData = {}) => {
-        const { wicketType = 'fall', fielderId = null, outBatterId = strikerId } = wicketData;
+        const { wicketType = 'none', fielderId = null, outBatterId = strikerId } = wicketData;
 
         if (overlayMessage || isPending) return;
 

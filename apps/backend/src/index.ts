@@ -375,7 +375,7 @@ fastify.post('/api/matches/:id/deliveries', async (request, reply) => {
       runs: finalRuns,
       extras: isExtra ? 1 : 0,
       extraType: extraType || 'none',
-      wicketType: wicketType || (isWicket ? 'fall' : 'none'),
+      wicketType: isWicket ? (wicketType || 'fall') : 'none',
       fielderId: fielderId || null,
       batterId: outBatterId || strikerId,
       bowlerId: currentBowlerId
@@ -516,24 +516,38 @@ fastify.delete('/api/matches/:id/deliveries/last', async (request, reply) => {
 
     if (!lastDelivery) return reply.status(400).send({ error: "No deliveries to undo" })
 
-    // Delete and revert score
+    // Delete the last delivery
     await prisma.delivery.delete({ where: { id: lastDelivery.id } })
     
-    const isWicket = lastDelivery.wicketType !== 'none'
+    // Recalculate totals from remaining deliveries to avoid corrupted data issues
+    const remainingDeliveries = await prisma.delivery.findMany({ where: { inningId: currentInning.id } })
+    const recalcRuns = remainingDeliveries.reduce((acc, d) => acc + d.runs, 0)
+    const recalcWickets = remainingDeliveries.filter(d => d.wicketType !== 'none').length
+    const legalBalls = remainingDeliveries.filter(d => d.extras === 0).length
+
     const updatedInning = await prisma.inning.update({
         where: { id: currentInning.id },
         data: {
-            totalRuns: { decrement: lastDelivery.runs },
-            totalWickets: { decrement: isWicket ? 1 : 0 },
-            // If it was a wicket, we cleared the striker, now we need to put them back
-            // However, strike rotation is complex. For now, we revert the strike if runs were odd.
-            // A more perfect solution would be to let the umpire re-assign if needed.
+            totalRuns: recalcRuns,
+            totalWickets: recalcWickets,
         }
     })
 
     // Re-fetch and emit update
     const stats = await calculatePlayerStats(updatedInning.id, updatedInning.strikerId, updatedInning.nonStrikerId, updatedInning.currentBowlerId)
-    const payload = { event: 'undo', stats, score: { runs: updatedInning.totalRuns, wickets: updatedInning.totalWickets } }
+    const payload = { 
+        event: 'undo', 
+        stats, 
+        score: { 
+            runs: updatedInning.totalRuns, 
+            wickets: updatedInning.totalWickets,
+            overs: Math.floor(legalBalls / 6),
+            balls: legalBalls % 6
+        },
+        strikerId: updatedInning.strikerId,
+        nonStrikerId: updatedInning.nonStrikerId,
+        currentBowlerId: updatedInning.currentBowlerId
+    }
     fastify.io.to(id).emit('match-update', payload)
     return payload
 })
